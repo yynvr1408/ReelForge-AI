@@ -2,6 +2,7 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import started from 'electron-squirrel-startup';
+import { updateElectronApp, UpdateSourceType } from 'update-electron-app';
 
 import { registerIpcHandlers } from './ipcHandlers';
 import {
@@ -170,8 +171,33 @@ async function launchProcessingService(): Promise<void> {
   }
 }
 
+function startAutoUpdater(): void {
+  // Electron's own public update service proxies GitHub releases for
+  // Squirrel.Windows/Squirrel.Mac, which is what our Squirrel maker
+  // produces. Dev builds never check for updates.
+  if (!app.isPackaged) return;
+  try {
+    updateElectronApp({
+      updateSource: {
+        type: UpdateSourceType.ElectronPublicUpdateService,
+        repo: 'yynvr1408/ReelForge-AI',
+      },
+      updateInterval: '1 hour',
+      logger: {
+        log: (message) => appendLog(`[updater] ${message}`),
+        info: (message) => appendLog(`[updater] ${message}`),
+        warn: (message) => appendLog(`[updater] ${message}`),
+        error: (message) => appendLog(`[updater] ${message}`),
+      },
+    });
+  } catch (error) {
+    writeCrashLog('autoUpdaterInit', error);
+  }
+}
+
 app.whenReady().then(async () => {
   createWindow();
+  startAutoUpdater();
   registerIpcHandlers(() => serviceClient, mainWindow!);
   ipcMain.handle(IPC_CHANNELS.serviceStatus, () => {
     if (serviceClient) return { state: 'ready' };

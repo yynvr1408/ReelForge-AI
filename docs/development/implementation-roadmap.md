@@ -17,7 +17,7 @@ Tracks the phases from the product spec (`ReelForge_AI_Claude_Code_Master_Prompt
 | 10 — Model manager | Not started | Nav placeholder only, explicitly marked unavailable |
 | 11 — Generative AI | Not started | |
 | 12 — Production hardening | Not started | No security review pass yet beyond the baseline Electron hardening in Phase 1 |
-| 13 — Release candidate | Not started | Packaging (`electron-forge package`/`make`) has not been run or validated on a clean machine |
+| 13 — Release candidate | In progress | CI (`.github/workflows/ci.yml`) and a tag-triggered release pipeline (`.github/workflows/release.yml`, `electron-forge release` → GitHub Releases) are built. `electron-forge package`/`make` verified locally — produces a working `.exe` and Squirrel installer with a generated `.ico`. Auto-update wired via `update-electron-app` (Electron's public update service, reads the GitHub Releases Squirrel feed). **Not yet working**: the packaged app doesn't bundle the Python runtime/FFmpeg, so an installed build can't start its processing service — see known-limitations.md. No code signing. |
 
 ## What the current vertical slice actually demonstrates
 

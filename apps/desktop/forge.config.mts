@@ -3,6 +3,7 @@ import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDeb } from '@electron-forge/maker-deb';
 import { MakerRpm } from '@electron-forge/maker-rpm';
+import { PublisherGitHub } from '@electron-forge/publisher-github';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
@@ -10,13 +11,31 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    // electron-packager picks the right extension per platform from
+    // this base name (icon.ico on win32, icon.icns on darwin, ignored
+    // on linux). Generated from assets/icon.png via
+    // `node scripts/generate-icon.mjs` — re-run that if the source
+    // icon changes.
+    icon: 'assets/icon',
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    // Windows is the primary target platform (see the product spec).
+    // MakerZIP/MakerRpm/MakerDeb are left in for other platforms but
+    // only run when `make`/`publish` executes on a matching OS —
+    // electron-forge skips makers whose default platform doesn't
+    // match the current one.
+    new MakerSquirrel({ setupIcon: 'assets/icon.ico' }),
     new MakerZIP({}, ['darwin']),
     new MakerRpm({}),
     new MakerDeb({}),
+  ],
+  publishers: [
+    new PublisherGitHub({
+      repository: { owner: 'yynvr1408', name: 'ReelForge-AI' },
+      prerelease: false,
+      generateReleaseNotes: true,
+    }),
   ],
   plugins: [
     new VitePlugin({
