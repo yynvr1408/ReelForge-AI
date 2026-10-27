@@ -12,6 +12,11 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
+# PyInstaller build output (services/processing) — rebuilt by the
+# Forge packaging hook, see apps/desktop/forge.config.mts
+services/processing/build/
+services/processing/dist/
+
 # App runtime data (never committed — lives under the OS user data dir
 # in production; local dev uses the same path via Electron's userData)
 *.db

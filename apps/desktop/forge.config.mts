@@ -7,6 +7,58 @@ import { PublisherGitHub } from '@electron-forge/publisher-github';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+const processingDir = path.resolve(
+  import.meta.dirname,
+  '..',
+  '..',
+  'services',
+  'processing',
+);
+const processingDistDir = path.join(
+  processingDir,
+  'dist',
+  'reelforge-processing',
+);
+
+/**
+ * Builds the processing service into a self-contained executable
+ * (no system Python needed on the target machine) before packaging,
+ * so `extraResource` below always has something fresh to copy in.
+ * See services/processing/reelforge-processing.spec and
+ * docs/releases/release-process.md.
+ */
+function buildProcessingServiceExecutable(): void {
+  const pyinstaller = path.join(
+    processingDir,
+    '.venv',
+    'Scripts',
+    'pyinstaller.exe',
+  );
+  if (!existsSync(pyinstaller)) {
+    throw new Error(
+      `PyInstaller not found at ${pyinstaller}. Run: cd services/processing && ./.venv/Scripts/pip install -e ".[build]"`,
+    );
+  }
+  console.log(
+    '[forge] Building processing service executable with PyInstaller...',
+  );
+  execFileSync(
+    pyinstaller,
+    ['reelforge-processing.spec', '--noconfirm', '--clean'],
+    {
+      cwd: processingDir,
+      stdio: 'inherit',
+    },
+  );
+  const exePath = path.join(processingDistDir, 'reelforge-processing.exe');
+  if (!existsSync(exePath)) {
+    throw new Error(`PyInstaller reported success but ${exePath} is missing`);
+  }
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -17,8 +69,16 @@ const config: ForgeConfig = {
     // `node scripts/generate-icon.mjs` — re-run that if the source
     // icon changes.
     icon: 'assets/icon',
+    // Copied as-is into resources/<basename>; src/main/paths.ts reads
+    // them back out by those same folder names at runtime.
+    extraResource: [processingDistDir, 'node_modules/ffmpeg-ffprobe-static'],
   },
   rebuildConfig: {},
+  hooks: {
+    prePackage: async () => {
+      buildProcessingServiceExecutable();
+    },
+  },
   makers: [
     // Windows is the primary target platform (see the product spec).
     // MakerZIP/MakerRpm/MakerDeb are left in for other platforms but

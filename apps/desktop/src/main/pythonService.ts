@@ -8,9 +8,7 @@ import path from 'node:path';
 import {
   getDataDir,
   getFfmpegPaths,
-  getProcessingServiceCwd,
-  getProcessingServiceEntrypoint,
-  getPythonExecutablePath,
+  getProcessingServiceCommand,
 } from './paths';
 
 export class ProcessingServiceError extends Error {}
@@ -62,13 +60,7 @@ export async function startProcessingService(options: {
     );
   }
 
-  const pythonExe = getPythonExecutablePath();
-  const entrypoint = getProcessingServiceEntrypoint();
-  if (!fs.existsSync(entrypoint)) {
-    throw new ProcessingServiceError(
-      `Processing service entrypoint not found at ${entrypoint}`,
-    );
-  }
+  const { command, args, cwd } = getProcessingServiceCommand();
 
   const port = await findFreePort();
   const token = randomBytes(32).toString('hex');
@@ -84,8 +76,8 @@ export async function startProcessingService(options: {
     PYTHONUNBUFFERED: '1',
   };
 
-  const child: ChildProcess = spawn(pythonExe, [entrypoint], {
-    cwd: getProcessingServiceCwd(),
+  const child: ChildProcess = spawn(command, args, {
+    cwd,
     env,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],

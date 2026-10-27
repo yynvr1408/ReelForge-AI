@@ -24,15 +24,15 @@
 - No separate update server — Electron's public service handles the Squirrel feed from your GitHub Releases directly.
 - No code signing is configured yet (see below) — Windows SmartScreen will warn unsigned installers; that's expected until a certificate is added.
 
-## ⚠️ Known gap: the published build isn't fully functional yet
+## How the packaged app bundles its own backend
 
-`electron-forge make`/`release` **does** produce a working installer and the app **does** launch after installing it — that part is verified (packaging was run and tested locally, not just assumed from dev mode working). But the installed app's local processing service won't start, because the Python interpreter and FFmpeg/FFprobe binaries that `src/main/paths.ts` expects at `resourcesPath/processing/` and `resourcesPath/ffmpeg/` aren't bundled into the package yet — only the dev-mode paths (the repo's own `.venv` and `node_modules`) are wired up.
+The processing service (FastAPI + OpenCV + PySceneDetect, normally a Python venv) is frozen into a self-contained executable with PyInstaller (`services/processing/reelforge-processing.spec`), so installs don't need Python at all. This happens automatically:
 
-Closing this requires a packaging hook (an electron-forge `packageAfterCopy` hook, most likely) that:
-- Copies `services/processing/app/` plus a self-contained Python runtime (e.g. the official Windows embeddable Python distribution, with the processing service's dependencies installed into it) into `resources/processing/`
-- Copies `ffmpeg-ffprobe-static`'s binaries into `resources/ffmpeg/` (or confirms they're already reachable via `extraResource`)
+1. `forge.config.mts`'s `prePackage` hook runs `pyinstaller reelforge-processing.spec` before every `package`/`make`/`release`, producing `services/processing/dist/reelforge-processing/`.
+2. `packagerConfig.extraResource` copies that folder, plus `node_modules/ffmpeg-ffprobe-static` (FFmpeg/FFprobe binaries), into the packaged app's `resources/`.
+3. `src/main/paths.ts` spawns `resources/reelforge-processing/reelforge-processing.exe` directly in packaged builds (vs. `python.exe app/main.py` in dev).
 
-Until that's done, treat tagged releases as installer/update-pipeline validation, not a usable build for end users. This is tracked in `docs/development/known-limitations.md` and should be the next packaging task before announcing this publicly.
+This is verified, not assumed: the packaged `.exe` was launched directly (not through dev mode) and the bundled service reached its ready state with a listening port, confirmed via `processing-service.stdout.log`'s `[lifecycle]` entries. If you add a new Python dependency that PyInstaller can't auto-detect (common for packages with dynamic imports or data files, like `scenedetect`/`cv2` already needed `collect_all` in the spec), the symptom is the frozen exe crashing on first *use* of that code path, not at startup — always test an actual reference-video import/analyze after rebuilding, not just that the exe launches.
 
 ## Code signing
 

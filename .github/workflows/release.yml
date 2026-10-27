@@ -26,7 +26,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
-      - name: Install dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install desktop dependencies
         working-directory: apps/desktop
         run: npm ci
 
@@ -35,6 +39,16 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
+
+      # electron-forge's prePackage hook freezes the processing service
+      # with PyInstaller into a self-contained exe bundled into the
+      # release — see docs/releases/release-process.md.
+      - name: Install processing-service build dependencies
+        working-directory: services/processing
+        run: |
+          python -m venv .venv
+          .venv\Scripts\pip install --upgrade pip
+          .venv\Scripts\pip install -e ".[build]"
 
       - name: Verify tag matches package.json version
         working-directory: apps/desktop

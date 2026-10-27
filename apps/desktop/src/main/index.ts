@@ -50,7 +50,16 @@ function broadcastServiceStatus(
   state: 'starting' | 'ready' | 'error' | 'stopped',
   message?: string,
 ): void {
-  mainWindow?.webContents.send(IPC_CHANNELS.serviceStatus, { state, message });
+  if (state === 'error' || state === 'stopped') {
+    appendLog(`[service-status] ${state}${message ? `: ${message}` : ''}`);
+  }
+  if (
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    !mainWindow.webContents.isDestroyed()
+  ) {
+    mainWindow.webContents.send(IPC_CHANNELS.serviceStatus, { state, message });
+  }
 }
 
 function appendLog(line: string): void {
@@ -196,21 +205,32 @@ function startAutoUpdater(): void {
 }
 
 app.whenReady().then(async () => {
-  createWindow();
-  startAutoUpdater();
-  registerIpcHandlers(() => serviceClient, mainWindow!);
-  ipcMain.handle(IPC_CHANNELS.serviceStatus, () => {
-    if (serviceClient) return { state: 'ready' };
-    if (serviceHandle) return { state: 'starting' };
-    return { state: 'starting' };
-  });
-  await launchProcessingService();
+  appendLog('[lifecycle] whenReady fired');
+  try {
+    createWindow();
+    appendLog('[lifecycle] createWindow done');
+    startAutoUpdater();
+    appendLog('[lifecycle] startAutoUpdater done');
+    registerIpcHandlers(() => serviceClient, mainWindow!);
+    ipcMain.handle(IPC_CHANNELS.serviceStatus, () => {
+      if (serviceClient) return { state: 'ready' };
+      if (serviceHandle) return { state: 'starting' };
+      return { state: 'starting' };
+    });
+    appendLog(
+      '[lifecycle] IPC handlers registered, launching processing service',
+    );
+    await launchProcessingService();
+    appendLog('[lifecycle] launchProcessingService returned');
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  } catch (error) {
+    writeCrashLog('whenReady', error);
+  }
 });
 
 app.on('window-all-closed', () => {

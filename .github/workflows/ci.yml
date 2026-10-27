@@ -39,7 +39,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
 
-      - name: Install dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install desktop dependencies
         working-directory: apps/desktop
         run: npm ci
 
@@ -50,6 +54,15 @@ jobs:
       - name: Lint
         working-directory: apps/desktop
         run: npm run lint
+
+      # electron-forge's prePackage hook freezes the processing service
+      # with PyInstaller, so packaging needs the service's venv too.
+      - name: Install processing-service build dependencies
+        working-directory: services/processing
+        run: |
+          python -m venv .venv
+          .venv\Scripts\pip install --upgrade pip
+          .venv\Scripts\pip install -e ".[build]"
 
       - name: Package (smoke test — not a full make/release)
         working-directory: apps/desktop
