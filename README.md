@@ -6,7 +6,7 @@ Full product specification: [ReelForge_AI_Claude_Code_Master_Prompt.md](ReelForg
 
 ## Current status
 
-A working vertical slice is implemented and tested end-to-end: create a project, import a reference video, detect scene cuts, build a style profile, import source footage, generate a rule-based timeline, render it with FFmpeg, and validate the output — all offline, no cloud dependency. See [docs/development/implementation-roadmap.md](docs/development/implementation-roadmap.md) for what's built versus planned, and [docs/development/known-limitations.md](docs/development/known-limitations.md) for honest gaps.
+A working offline vertical slice is implemented: create a project, import a reference video, detect scene cuts, build a style profile, import source footage, generate a rule-based timeline, render it with FFmpeg, and validate the output. The processing tests pass, but the full API workflow must be rerun outside the current restricted Windows sandbox, where the TestClient cannot create its asyncio socket pair. See [docs/development/implementation-roadmap.md](docs/development/implementation-roadmap.md) for what's built versus planned, and [docs/development/known-limitations.md](docs/development/known-limitations.md) for current verification gaps.
 
 ## Repository layout
 
@@ -67,3 +67,7 @@ npm run lint
 ## Security
 
 See [SECURITY.md](SECURITY.md). Electron is configured with `contextIsolation`, `sandbox`, and `nodeIntegration: false`; the renderer reaches the processing service only through a fixed, typed IPC allowlist — never direct HTTP, Node, or shell access.
+
+## AI editing scope
+
+The intended AI features analyze user-provided footage and suggest editable timelines, pacing, and audio choices. They do not generate frames or alter a person's face, body, clothing, or scene. Reframing uses original pixels or letterboxing; suggested edits remain reviewable before rendering.

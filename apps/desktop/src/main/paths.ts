@@ -54,7 +54,7 @@ export function getProcessingServiceCommand(): {
   cwd: string;
 } {
   if (isPackaged()) {
-    const serviceDir = path.join(process.resourcesPath, 'reelforge-processing');
+    const serviceDir = path.join(process.resourcesPath, 'rf');
     const exePath = path.join(serviceDir, 'reelforge-processing.exe');
     if (!fs.existsSync(exePath)) {
       throw new Error(

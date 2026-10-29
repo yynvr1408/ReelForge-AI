@@ -19,6 +19,10 @@ ReelForge AI is a local-first desktop app. The processing service never listens 
 - No formal security review pass has been done (tracked as Phase 12 in the roadmap).
 - Packaging (code signing, installer hardening) hasn't been attempted.
 
+## AI editing boundary
+
+AI editing features must analyze footage and propose edits to user-provided media. They must not synthesize or replace frames, alter a person's face or body, change clothing, or invent scene content. Reframing must use pixels from the source image (letterboxing is preferable to generated fill); color, stabilization, audio mixing, and captions are conventional, reviewable edits. Generated timelines remain structured, validated, and editable before rendering.
+
 ## Reporting
 
 This is a personal/local project without a public release yet; file an issue in this repository if you find a problem.

@@ -15,17 +15,25 @@ TIMELINE_SCHEMA_VERSION = 1
 
 
 class ColorAdjustment(BaseModel):
-    exposure: float = 0.0
-    contrast: float = 0.0
-    saturation: float = 0.0
-    temperature: float = 0.0
+    exposure: float = Field(default=0.0, ge=-1.0, le=1.0)
+    contrast: float = Field(default=0.0, ge=-0.9, le=1.0)
+    saturation: float = Field(default=0.0, ge=-1.0, le=2.0)
+    temperature: float = Field(default=0.0, ge=-1.0, le=1.0)
 
 
 class TextOverlay(BaseModel):
-    text: str
-    start_seconds: float
-    end_seconds: float
+    text: str = Field(min_length=1, max_length=300)
+    start_seconds: float = Field(ge=0)
+    end_seconds: float = Field(gt=0)
     position: Literal["top", "center", "bottom"] = "bottom"
+
+    @field_validator("text")
+    @classmethod
+    def nonblank_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("caption text cannot be blank")
+        return value
 
     @field_validator("end_seconds")
     @classmethod
@@ -49,10 +57,15 @@ class Clip(BaseModel):
     source_out_seconds: float = Field(gt=0)
     timeline_position_seconds: float = Field(ge=0)
     playback_speed: float = Field(default=1.0, gt=0)
+    stabilize: bool = False
+    reframe_x: float = Field(default=0.5, ge=0, le=1)
+    reframe_y: float = Field(default=0.5, ge=0, le=1)
     color: ColorAdjustment = Field(default_factory=ColorAdjustment)
     audio: AudioAdjustment = Field(default_factory=AudioAdjustment)
     transition_in: Literal["none", "cut", "fade", "crossfade"] = "cut"
-    transition_duration_seconds: float = 0.0
+    transition_duration_seconds: float = Field(default=0.0, ge=0.0, le=10.0)
+    quality_score: float | None = Field(default=None, ge=0, le=1)
+    selection_reason: str | None = Field(default=None, max_length=500)
 
     @field_validator("source_out_seconds")
     @classmethod
@@ -75,9 +88,9 @@ class Track(BaseModel):
 
 
 class ExportSettings(BaseModel):
-    width: int = Field(gt=0, default=1080)
-    height: int = Field(gt=0, default=1920)
-    frame_rate: float = Field(gt=0, default=30.0)
+    width: int = Field(gt=0, le=7680, default=1080)
+    height: int = Field(gt=0, le=7680, default=1920)
+    frame_rate: float = Field(gt=0, le=120, default=30.0)
     video_codec: str = "libx264"
     audio_codec: str = "aac"
     container: Literal["mp4"] = "mp4"

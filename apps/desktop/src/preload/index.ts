@@ -3,14 +3,26 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type {
   InputReel,
+  EditingFeedback,
+  ExportSettings,
   MediaAsset,
+  MediaPage,
+  MediaBatchImportResult,
   Project,
+  ProjectVersion,
+  ReferenceCollection,
+  ReferenceAnalysisJob,
+  SimilarReference,
   ReferenceVideo,
   RenderJob,
   ServiceStatus,
   StorageInfo,
   StyleProfile,
+  StyleProfileExport,
   TimelineGenerateResult,
+  TrainingModelStatus,
+  TrainingRun,
+  ModelManagerInfo,
 } from '../shared/ipc-contract';
 
 /**
@@ -49,9 +61,39 @@ const reelforgeApi = {
   deleteProject(projectId: string): Promise<{ deleted: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectDelete, projectId);
   },
+  listProjectVersions(projectId: string): Promise<ProjectVersion[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectVersions, projectId);
+  },
+  restoreProjectVersion(
+    projectId: string,
+    versionId: string,
+  ): Promise<Project> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectVersionRestore, {
+      projectId,
+      versionId,
+    });
+  },
+  createEditingFeedback(payload: {
+    projectId?: string;
+    styleProfileId?: string;
+    subject: 'timeline_pacing' | 'clip_selection' | 'color';
+    action: 'accepted' | 'rejected' | 'too_fast' | 'too_slow' | 'adjusted';
+    data?: Record<string, unknown>;
+  }): Promise<EditingFeedback> {
+    return ipcRenderer.invoke(IPC_CHANNELS.feedbackCreate, payload);
+  },
+  listEditingFeedback(projectId?: string): Promise<EditingFeedback[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.feedbackList, projectId);
+  },
+  deleteEditingFeedback(feedbackId: string): Promise<{ deleted: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.feedbackDelete, feedbackId);
+  },
 
   pickMediaFiles(): Promise<string[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.mediaImportDialog);
+  },
+  pickMediaFile(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaRelinkDialog);
   },
   importMedia(
     projectId: string | null,
@@ -62,12 +104,36 @@ const reelforgeApi = {
       sourcePath,
     });
   },
+  importMediaBatch(
+    projectId: string | null,
+    sourcePaths: string[],
+  ): Promise<MediaBatchImportResult[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaImportBatch, {
+      projectId,
+      sourcePaths,
+    });
+  },
   listMedia(projectId?: string): Promise<MediaAsset[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.mediaList, projectId);
+  },
+  listMediaPage(limit: number, offset: number): Promise<MediaPage> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaPage, { limit, offset });
+  },
+  revalidateMedia(): Promise<MediaAsset[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaRevalidate);
+  },
+  relinkMedia(mediaId: string, sourcePath: string): Promise<MediaAsset> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaRelink, {
+      mediaId,
+      sourcePath,
+    });
   },
 
   pickReferenceFiles(): Promise<string[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceImportDialog);
+  },
+  pickReferenceReplacementFile(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceRelinkDialog);
   },
   importReference(sourcePath: string, name?: string): Promise<ReferenceVideo> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceImport, {
@@ -75,14 +141,75 @@ const reelforgeApi = {
       name,
     });
   },
-  analyzeReference(referenceId: string): Promise<ReferenceVideo> {
+  relinkReference(
+    referenceId: string,
+    sourcePath: string,
+  ): Promise<ReferenceVideo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceRelink, {
+      referenceId,
+      sourcePath,
+    });
+  },
+  analyzeReference(referenceId: string): Promise<ReferenceAnalysisJob> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceAnalyze, referenceId);
   },
-  listReferences(): Promise<ReferenceVideo[]> {
-    return ipcRenderer.invoke(IPC_CHANNELS.referenceList);
+  getReferenceAnalysisJob(jobId: string): Promise<ReferenceAnalysisJob> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceAnalysisJobGet, jobId);
+  },
+  cancelReferenceAnalysisJob(jobId: string): Promise<ReferenceAnalysisJob> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceAnalysisJobCancel, jobId);
+  },
+  listReferences(filters?: {
+    search?: string;
+    collectionId?: string;
+    tag?: string;
+    analysisStatus?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ReferenceVideo[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceList, filters);
+  },
+  findSimilarReferences(referenceId: string): Promise<SimilarReference[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceSimilar, referenceId);
   },
   getReference(referenceId: string): Promise<ReferenceVideo> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceGet, referenceId);
+  },
+  updateReference(
+    referenceId: string,
+    payload: {
+      tags?: string[];
+      collectionId?: string;
+      excludedFromAggregation?: boolean;
+    },
+  ): Promise<ReferenceVideo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceUpdate, {
+      referenceId,
+      ...payload,
+    });
+  },
+  listReferenceCollections(): Promise<ReferenceCollection[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceCollectionsList);
+  },
+  createReferenceCollection(name: string): Promise<ReferenceCollection> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceCollectionCreate, name);
+  },
+  renameReferenceCollection(
+    collectionId: string,
+    name: string,
+  ): Promise<ReferenceCollection> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceCollectionUpdate, {
+      collectionId,
+      name,
+    });
+  },
+  deleteReferenceCollection(
+    collectionId: string,
+  ): Promise<{ deleted: boolean }> {
+    return ipcRenderer.invoke(
+      IPC_CHANNELS.referenceCollectionDelete,
+      collectionId,
+    );
   },
 
   createStyleProfile(
@@ -97,16 +224,37 @@ const reelforgeApi = {
   listStyleProfiles(): Promise<StyleProfile[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.styleProfileList);
   },
+  importStyleProfile(profile: StyleProfileExport): Promise<StyleProfile> {
+    return ipcRenderer.invoke(IPC_CHANNELS.styleProfileImport, profile);
+  },
+  updateStyleProfile(
+    profileId: string,
+    updates: {
+      medianShotDurationSeconds?: number;
+      color?: Record<string, number>;
+    },
+  ): Promise<StyleProfile> {
+    return ipcRenderer.invoke(IPC_CHANNELS.styleProfileUpdate, {
+      profileId,
+      ...updates,
+    });
+  },
 
   generateTimeline(
     mediaIds: string[],
+    projectId?: string,
     styleProfileId?: string,
     targetDurationSeconds?: number,
+    editingBrief?: string,
+    exportSettings?: ExportSettings,
   ): Promise<TimelineGenerateResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.timelineGenerate, {
       mediaIds,
+      projectId,
       styleProfileId,
       targetDurationSeconds,
+      editingBrief,
+      exportSettings,
     });
   },
 
@@ -125,7 +273,9 @@ const reelforgeApi = {
   listRenderJobs(projectId?: string): Promise<RenderJob[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.renderList, projectId);
   },
-  cancelRenderJob(jobId: string): Promise<{ cancelled: boolean }> {
+  cancelRenderJob(
+    jobId: string,
+  ): Promise<{ cancelled: boolean; status: string }> {
     return ipcRenderer.invoke(IPC_CHANNELS.renderCancel, jobId);
   },
 
@@ -150,6 +300,30 @@ const reelforgeApi = {
   },
   deleteTrainingInputReel(filename: string): Promise<{ deleted: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.trainingInputReelsDelete, filename);
+  },
+  getTrainingModelStatus(): Promise<TrainingModelStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingModelStatus);
+  },
+  trainPacingPreferenceModel(): Promise<TrainingRun> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingModelTrain);
+  },
+  getActivePacingTrainingRun(): Promise<TrainingRun | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingRunActive);
+  },
+  getPacingTrainingRun(jobId: string): Promise<TrainingRun> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingRunGet, jobId);
+  },
+  cancelPacingTrainingRun(jobId: string): Promise<TrainingRun> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingRunCancel, jobId);
+  },
+  promotePacingPreferenceModel(): Promise<TrainingModelStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingModelPromote);
+  },
+  rollbackPacingPreferenceModel(): Promise<TrainingModelStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingPacingModelRollback);
+  },
+  getModelManagerInfo(): Promise<ModelManagerInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.modelManagerInfo);
   },
 
   getStorageInfo(): Promise<StorageInfo> {

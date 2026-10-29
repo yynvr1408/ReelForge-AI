@@ -6,7 +6,8 @@
 # apps/desktop/src/main/paths.ts and docs/releases/release-process.md.
 #
 # Rebuild with: ./.venv/Scripts/pyinstaller reelforge-processing.spec --noconfirm --clean
-# Output: dist/reelforge-processing/ (reelforge-processing.exe + _internal/)
+# Output: dist/rf/ (reelforge-processing.exe + _internal/). The short resource
+# folder name keeps the Squirrel.Windows package within legacy MAX_PATH.
 #
 # `collect_all` is needed for scenedetect and cv2 because PyInstaller's
 # static import analysis misses their dynamic imports/data files;
@@ -72,5 +73,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='reelforge-processing',
+    name='rf',
 )

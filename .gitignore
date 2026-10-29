@@ -10,6 +10,7 @@ npm-debug.log*
 __pycache__/
 *.pyc
 .pytest_cache/
+.pytest-temp/
 *.egg-info/
 
 # PyInstaller build output (services/processing) — rebuilt by the
@@ -31,6 +32,9 @@ services/processing/dist/
 Thumbs.db
 .vscode/
 .idea/
+.tmp/
+/build/
+/b/
 
 # Env/secrets
 .env

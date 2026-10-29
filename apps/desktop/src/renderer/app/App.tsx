@@ -1,6 +1,5 @@
 import { Sidebar } from '../components/Sidebar';
 import { ServiceStatusBadge } from '../components/ServiceStatusBadge';
-import { NotImplemented } from '../components/NotImplemented';
 import { useAppStore } from '../stores/useAppStore';
 
 import { DashboardPage } from '../features/dashboard/DashboardPage';
@@ -12,6 +11,7 @@ import { EditorPage } from '../features/editor/EditorPage';
 import { RenderQueuePage } from '../features/render-queue/RenderQueuePage';
 import { TrainingStudioPage } from '../features/training-studio/TrainingStudioPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
+import { ModelManagerPage } from '../features/model-manager/ModelManagerPage';
 
 const SECTION_TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -47,7 +47,7 @@ function ActiveSection() {
     case 'training-studio':
       return <TrainingStudioPage />;
     case 'model-manager':
-      return <NotImplemented feature="Model Manager" phase="Phase 10" />;
+      return <ModelManagerPage />;
     case 'settings':
       return <SettingsPage />;
     default:

@@ -81,6 +81,17 @@ def service_env(tmp_path, ffmpeg_path, ffprobe_path, monkeypatch):
 
 
 @pytest.fixture()
+def route_session(service_env):
+    from sqlalchemy.orm import Session
+
+    from app.database.session import init_database
+
+    engine = init_database(service_env / "reelforge.db")
+    with Session(engine, expire_on_commit=False) as session:
+        yield session
+
+
+@pytest.fixture()
 def app_client(service_env):
     # Reset process-wide singletons between tests since config/db are cached.
     import app.core.config as config_module

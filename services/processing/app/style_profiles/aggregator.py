@@ -16,6 +16,8 @@ class ReferenceSample:
     shot_durations_seconds: list[float]
     cut_count: int
     confidence: float
+    visual: dict | None = None
+    audio: dict | None = None
 
 
 def build_style_profile(samples: list[ReferenceSample]) -> dict:
@@ -45,4 +47,65 @@ def build_style_profile(samples: list[ReferenceSample]) -> dict:
         "sample_count": len(all_durations),
         "confidence": round(min(0.95, mean(confidences) * (0.6 + 0.08 * len(usable))), 3),
     }
+    visual_samples = [sample.visual for sample in usable if sample.visual]
+    if visual_samples:
+        visual_fields = (
+            "sharpness_laplacian_variance_median",
+            "brightness_mean_0_255",
+            "underexposed_sample_ratio",
+            "overexposed_sample_ratio",
+            "saturation_mean_0_255",
+            "motion_magnitude_median",
+            "camera_shake_candidate_ratio",
+        )
+        profile["visual"] = {
+            key: round(mean(float(item[key]) for item in visual_samples if key in item), 3)
+            for key in visual_fields
+            if any(key in item for item in visual_samples)
+        }
+    audio_samples = [sample.audio for sample in usable if sample.audio]
+    if audio_samples:
+        tempo_values = [
+            float(candidate["bpm"])
+            for item in audio_samples
+            for candidate in item.get("tempo_candidates_bpm", [])
+            if float(candidate.get("confidence", 0.0)) >= 0.35
+        ]
+        profile["audio"] = {
+            "mean_rms": round(mean(float(item.get("rms_mean", 0.0)) for item in audio_samples), 5),
+            "transient_candidates_per_minute": round(
+                mean(
+                    len(item.get("transient_candidates_seconds", []))
+                    / max(float(item.get("duration_seconds", 0.0)) / 60, 1 / 60)
+                    for item in audio_samples
+                ),
+                2,
+            ),
+            "silence_ratio": round(
+                mean(
+                    sum(max(0.0, end - start) for start, end in item.get("silence_ranges_seconds", []))
+                    / max(float(item.get("duration_seconds", 0.0)), 0.001)
+                    for item in audio_samples
+                ),
+                3,
+            ),
+            "tempo_candidates_bpm": sorted({round(value, 1) for value in tempo_values}),
+            "beat_candidates_per_minute": round(
+                mean(
+                    len(item.get("beat_candidates_seconds", []))
+                    / max(float(item.get("duration_seconds", 0.0)) / 60, 1 / 60)
+                    for item in audio_samples
+                ),
+                2,
+            ),
+            "speech_like_ratio": round(
+                mean(
+                    sum(max(0.0, end - start) for start, end in item.get("speech_like_ranges_seconds", []))
+                    / max(float(item.get("duration_seconds", 0.0)), 0.001)
+                    for item in audio_samples
+                ),
+                3,
+            ),
+            "tempo_note": "Beat and tempo values are review hypotheses, not reliable beat tracking; speech-like ranges are coarse spectral estimates, not speech recognition or dependable voice detection.",
+        }
     return profile

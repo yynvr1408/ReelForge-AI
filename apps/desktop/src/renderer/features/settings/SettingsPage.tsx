@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, HardDrive } from 'lucide-react';
+import { FolderOpen, HardDrive, Trash2 } from 'lucide-react';
 
-import type { StorageInfo } from '../../../shared/ipc-contract';
+import type {
+  EditingFeedback,
+  StorageInfo,
+} from '../../../shared/ipc-contract';
 import { useServiceStatus } from '../../hooks/useServiceStatus';
 
 function formatBytes(bytes: number): string {
@@ -14,10 +17,15 @@ function formatBytes(bytes: number): string {
 export function SettingsPage() {
   const status = useServiceStatus();
   const [info, setInfo] = useState<StorageInfo | null>(null);
+  const [feedback, setFeedback] = useState<EditingFeedback[]>([]);
 
   useEffect(() => {
-    if (status.state === 'ready')
-      void window.reelforge.getStorageInfo().then(setInfo);
+    if (status.state === 'ready') {
+      void Promise.all([
+        window.reelforge.getStorageInfo().then(setInfo),
+        window.reelforge.listEditingFeedback().then(setFeedback),
+      ]);
+    }
   }, [status.state]);
 
   if (status.state !== 'ready') {
@@ -62,6 +70,43 @@ export function SettingsPage() {
             </li>
           ))}
         </ul>
+      </section>
+      <section className="rounded-lg border border-white/10 bg-neutral-950 p-5">
+        <h2 className="mb-2 text-sm font-medium text-neutral-200">
+          Editing feedback
+        </h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          Stored locally. Pacing feedback makes a small, bounded adjustment to
+          later suggestions. Delete entries at any time.
+        </p>
+        {feedback.length === 0 ? (
+          <p className="text-xs text-neutral-500">No feedback stored.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {feedback.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex items-center justify-between rounded px-2 py-2 text-xs hover:bg-white/5"
+              >
+                <span className="text-neutral-400">
+                  {entry.subject} · {entry.action} ·{' '}
+                  {new Date(entry.created_at).toLocaleString()}
+                </span>
+                <button
+                  type="button"
+                  title="Delete feedback entry"
+                  onClick={async () => {
+                    await window.reelforge.deleteEditingFeedback(entry.id);
+                    setFeedback(await window.reelforge.listEditingFeedback());
+                  }}
+                  className="rounded p-1 text-neutral-500 hover:text-red-300"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
       <p className="text-xs text-neutral-500">
         Rendered output already lands in a real folder on disk (Rendered exports

@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Upload, Trash2, FolderOpen, Info } from 'lucide-react';
+import {
+  Upload,
+  Trash2,
+  FolderOpen,
+  Info,
+  BrainCircuit,
+  RotateCcw,
+  CircleStop,
+} from 'lucide-react';
 
-import type { InputReel, StorageInfo } from '../../../shared/ipc-contract';
+import type {
+  InputReel,
+  StorageInfo,
+  TrainingModelStatus,
+  TrainingRun,
+} from '../../../shared/ipc-contract';
 import { useServiceStatus } from '../../hooks/useServiceStatus';
 
 function formatDuration(seconds: number | null): string {
@@ -22,19 +35,61 @@ export function TrainingStudioPage() {
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelStatus, setModelStatus] = useState<TrainingModelStatus | null>(
+    null,
+  );
+  const [trainingRun, setTrainingRun] = useState<TrainingRun | null>(null);
+  const [startingTraining, setStartingTraining] = useState(false);
+  const training =
+    startingTraining ||
+    Boolean(
+      trainingRun &&
+      ['queued', 'running', 'cancel_requested'].includes(trainingRun.status),
+    );
 
   async function refresh() {
-    const [reelList, storageInfo] = await Promise.all([
+    const [reelList, storageInfo, models, activeRun] = await Promise.all([
       window.reelforge.listTrainingInputReels(),
       window.reelforge.getStorageInfo(),
+      window.reelforge.getTrainingModelStatus(),
+      window.reelforge.getActivePacingTrainingRun(),
     ]);
     setReels(reelList);
     setStorage(storageInfo);
+    setModelStatus(models);
+    setTrainingRun(activeRun);
   }
 
   useEffect(() => {
     if (status.state === 'ready') void refresh();
   }, [status.state]);
+
+  useEffect(() => {
+    if (
+      !trainingRun ||
+      !['queued', 'running', 'cancel_requested'].includes(trainingRun.status)
+    )
+      return;
+    const timer = setInterval(() => {
+      void window.reelforge
+        .getPacingTrainingRun(trainingRun.id)
+        .then(async (run) => {
+          setTrainingRun(run);
+          if (run.status === 'complete')
+            setModelStatus(await window.reelforge.getTrainingModelStatus());
+          if (run.status === 'failed')
+            setError(run.error_message ?? 'Training failed');
+        })
+        .catch((err: unknown) => {
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Could not read training progress',
+          );
+        });
+    }, 500);
+    return () => clearInterval(timer);
+  }, [trainingRun?.id, trainingRun?.status]);
 
   const inputDir = storage?.locations.find(
     (l) => l.key === 'training_input',
@@ -60,6 +115,40 @@ export function TrainingStudioPage() {
   async function handleRemove(filename: string) {
     await window.reelforge.deleteTrainingInputReel(filename);
     await refresh();
+  }
+
+  async function runModelAction(action: 'train' | 'promote' | 'rollback') {
+    setError(null);
+    if (action === 'train') setStartingTraining(true);
+    try {
+      if (action === 'train') {
+        setTrainingRun(await window.reelforge.trainPacingPreferenceModel());
+      } else {
+        const updated =
+          action === 'promote'
+            ? await window.reelforge.promotePacingPreferenceModel()
+            : await window.reelforge.rollbackPacingPreferenceModel();
+        setModelStatus(updated);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Training action failed');
+    } finally {
+      setStartingTraining(false);
+    }
+  }
+
+  async function cancelTraining() {
+    if (!trainingRun || !['queued', 'running'].includes(trainingRun.status))
+      return;
+    try {
+      setTrainingRun(
+        await window.reelforge.cancelPacingTrainingRun(trainingRun.id),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not cancel training',
+      );
+    }
   }
 
   if (status.state !== 'ready') {
@@ -107,9 +196,9 @@ export function TrainingStudioPage() {
 
         <p className="mb-3 text-xs text-neutral-500">
           Reels placed here (through this button, or dropped directly into the
-          folder in Explorer) are what a training run will draw from. Training
-          itself reads straight from this folder, so there's one place to manage
-          what gets trained on.
+          folder in Explorer) are staged as source media. The supported pacing
+          preference task below learns only from explicit feedback and does not
+          consume video frames.
         </p>
 
         {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
@@ -145,29 +234,150 @@ export function TrainingStudioPage() {
         )}
       </section>
 
+      <section className="rounded-lg border border-white/10 bg-neutral-950 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <BrainCircuit size={16} className="text-orange-400" />
+          <h3 className="text-sm font-medium text-neutral-200">
+            Pacing preference model
+          </h3>
+        </div>
+        <p className="mb-4 text-xs text-neutral-500">
+          Train a small local logistic model from your explicit “too fast” and
+          “too slow” timeline ratings. It learns pacing preferences only; staged
+          videos are not used as training examples and frames or identities are
+          never modified.
+        </p>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <ModelCard label="Active model" model={modelStatus?.active ?? null} />
+          <ModelCard
+            label="Candidate checkpoint"
+            model={modelStatus?.candidate ?? null}
+          />
+        </div>
+        {trainingRun && (
+          <div className="mb-4 rounded-md border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-neutral-300">
+                Training {trainingRun.status.replaceAll('_', ' ')}
+                {trainingRun.stage
+                  ? ` · ${trainingRun.stage.replaceAll('_', ' ')}`
+                  : ''}
+              </span>
+              {typeof trainingRun.progress === 'number' && (
+                <span className="text-neutral-500">
+                  {(trainingRun.progress * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Training progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(trainingRun.progress * 100)}
+              className="mt-2 h-1.5 overflow-hidden rounded bg-white/10"
+            >
+              <div
+                className="h-full bg-orange-500 transition-[width]"
+                style={{
+                  width: `${Math.max(0, Math.min(1, trainingRun.progress)) * 100}%`,
+                }}
+              />
+            </div>
+            {trainingRun.error_message && (
+              <p className="mt-2 text-xs text-red-400">
+                {trainingRun.error_message}
+              </p>
+            )}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={training}
+            onClick={() => void runModelAction('train')}
+            className="rounded-md bg-orange-500 px-3 py-2 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+          >
+            {training ? 'Working…' : 'Train from feedback'}
+          </button>
+          {training && trainingRun?.status !== 'cancel_requested' && (
+            <button
+              type="button"
+              onClick={() => void cancelTraining()}
+              className="flex items-center gap-1.5 rounded-md border border-red-400/30 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10"
+            >
+              <CircleStop size={13} /> Cancel training
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={training || !modelStatus?.candidate?.promotable}
+            onClick={() => void runModelAction('promote')}
+            className="rounded-md border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/5 disabled:opacity-40"
+          >
+            Promote evaluated candidate
+          </button>
+          <button
+            type="button"
+            disabled={training || !modelStatus?.rollback_available}
+            onClick={() => void runModelAction('rollback')}
+            className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/5 disabled:opacity-40"
+          >
+            <RotateCcw size={13} /> Roll back
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-neutral-600">
+          Training needs at least 8 valid pacing ratings, including at least 3
+          in each direction. Candidates are evaluated on held-out examples
+          before promotion.
+        </p>
+      </section>
+
       <section className="flex items-start gap-3 rounded-lg border border-white/10 bg-neutral-950 p-5">
         <Info size={16} className="mt-0.5 shrink-0 text-neutral-500" />
         <div>
           <p className="text-sm text-neutral-300">
-            Training is not implemented yet.
+            Video dataset training is not supported.
           </p>
           <p className="mt-1 text-xs text-neutral-500">
-            Staging reels here is real and working — it's the first piece of
-            Phase 9 (Training Studio). Actually training a model needs dataset
-            manifests, task/model selection, hardware checks, checkpoints, and
-            an evaluation-before-promotion step, none of which exist yet. See
-            docs/development/implementation-roadmap.md for the planned build
-            order.
+            The folder above remains available for organizing source reels. This
+            supported training task uses only explicit rating data; there is no
+            video, face, body, or scene generation.
           </p>
-          <button
-            type="button"
-            disabled
-            className="mt-3 cursor-not-allowed rounded-md bg-neutral-800 px-4 py-2 text-sm font-medium text-neutral-500"
-          >
-            Train (not available)
-          </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function ModelCard({
+  label,
+  model,
+}: {
+  label: string;
+  model: TrainingModelStatus['active'];
+}) {
+  return (
+    <div className="rounded-md border border-white/10 bg-neutral-900 p-3">
+      <p className="text-xs font-medium text-neutral-400">{label}</p>
+      {model ? (
+        <div className="mt-1 text-xs text-neutral-300">
+          <p>
+            {model.sample_count} samples · {model.evaluation_count ?? '—'}{' '}
+            held-out · {(model.evaluation_accuracy * 100).toFixed(0)}% accuracy
+          </p>
+          <p className="mt-0.5 text-neutral-500">
+            Baseline {(model.majority_baseline_accuracy * 100).toFixed(0)}% ·{' '}
+            {model.promotable
+              ? 'passed evaluation gate'
+              : 'did not pass evaluation gate'}
+            {model.evaluation_balanced_accuracy != null &&
+              ` · ${Math.round(model.evaluation_balanced_accuracy * 100)}% balanced accuracy`}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-neutral-600">None</p>
+      )}
     </div>
   );
 }

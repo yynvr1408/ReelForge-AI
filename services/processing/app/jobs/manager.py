@@ -52,6 +52,10 @@ class JobManager:
         handle.cancel_event.set()
         return True
 
+    def is_active(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._handles
+
     def shutdown(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 

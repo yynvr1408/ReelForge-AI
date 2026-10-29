@@ -630,11 +630,9 @@ Do not assume CUDA is available. Support CPU training for suitable small tasks a
 
 Provide resource warnings, cancellation, and checkpoints for supported tasks. Do not claim successful training merely because the dataset was analyzed.
 
-# 27. GENERATIVE AI
+  # 27. GENERATIVE AI
 
-Implement optional provider interfaces for compatible features such as background removal/replacement, video extension, supplementary shot generation, subject transformations, and advanced motion-transfer workflows.
-
-Do not make these features mandatory for the initial release.
+Generative features that alter a person's face or body, replace a face, synthesize people, change clothing, or replace/invent scene content are out of scope for this product. AI editing must analyze and arrange user-provided source footage. Reframing must use source pixels or letterboxing; it must not generate fill. Conventional, user-visible color, stabilization, crop, audio, and caption edits remain allowed. Any future generative operation outside these boundaries requires an explicit product decision and must never be part of the default editing workflow.
 
 Evaluate each integration for licensing, commercial-use permissions, model size, hardware requirements, operating-system support, runtime compatibility, latency, cost, input/output formats, and quality limitations.
 

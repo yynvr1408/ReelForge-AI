@@ -11,9 +11,12 @@ from app.core.config import Settings, get_settings
 from app.database.models import MediaAsset, Project, RenderJob
 from app.database.session import get_session, session_scope
 from app.jobs.manager import get_job_manager
-from app.rendering.ffmpeg_renderer import RenderError, RenderProgress, render_timeline
+from app.jobs.manager import JobHandle
+from app.rendering.ffmpeg_renderer import RenderCancelled, RenderProgress, render_timeline
 from app.rendering.output_validator import validate_render_output
+from app.rendering.quality_analysis import analyze_render_quality
 from app.security.auth import require_service_token
+from app.security.paths import UnsafePathError, resolve_within
 from app.timeline.schema import Timeline
 from app.timeline.validator import is_valid, validate_timeline
 
@@ -42,7 +45,7 @@ class RenderJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_paths: dict[str, Path], output_path: Path):
+def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_paths: dict[str, Path], media_has_audio: dict[str, bool], output_path: Path, handle: JobHandle):
     with session_scope() as session:
         job = session.get(RenderJob, job_id)
         if job is None:
@@ -59,26 +62,49 @@ def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_p
                 session.commit()
 
     try:
-        render_timeline(settings.ffmpeg_path, timeline, media_paths, output_path, on_progress=on_progress)
+        if handle.cancelled():
+            raise RenderCancelled("Render cancelled")
+        render_timeline(
+            settings.ffmpeg_path,
+            timeline,
+            media_paths,
+            output_path,
+            on_progress=on_progress,
+            cancelled=handle.cancelled,
+            media_has_audio=media_has_audio,
+        )
         validation = validate_render_output(
             settings.ffprobe_path, output_path, timeline.total_duration_seconds, timeline.export_settings
         )
+        quality_report = analyze_render_quality(settings.ffmpeg_path, output_path)
         with session_scope() as session:
             job = session.get(RenderJob, job_id)
             if job is not None:
                 job.status = "complete" if validation.is_valid else "failed"
                 job.stage = "complete"
                 job.output_path = str(output_path)
-                job.validation_json = {"is_valid": validation.is_valid, "issues": validation.issues}
+                job.validation_json = {
+                    "is_valid": validation.is_valid,
+                    "issues": validation.issues,
+                    "quality_report": quality_report,
+                }
                 if not validation.is_valid:
                     job.error_message = "; ".join(validation.issues)
                 session.commit()
-    except RenderError as exc:
+    except RenderCancelled:
+        with session_scope() as session:
+            job = session.get(RenderJob, job_id)
+            if job is not None:
+                job.status = "cancelled"
+                job.stage = "cancelled"
+                session.commit()
+    except Exception as exc:
+        # Persist every worker failure so a queued/running job cannot remain stuck forever.
         with session_scope() as session:
             job = session.get(RenderJob, job_id)
             if job is not None:
                 job.status = "failed"
-                job.error_message = str(exc)
+                job.error_message = str(exc)[:2000] or type(exc).__name__
                 session.commit()
 
 
@@ -106,6 +132,7 @@ def start_render(
         raise HTTPException(status_code=422, detail=[i.__dict__ for i in issues])
 
     media_paths = {a.id: Path(a.storage_path) for a in assets}
+    media_has_audio = {a.id: bool(a.has_audio) for a in assets}
 
     job = RenderJob(project_id=project.id, job_type="render", status="queued")
     session.add(job)
@@ -113,11 +140,24 @@ def start_render(
     session.refresh(job)
 
     output_name = payload.output_filename or f"{job.id}.mp4"
-    output_path = settings.exports_dir / project.id / output_name
+    # Only accept a simple MP4 filename. Reject both POSIX and Windows path
+    # separators so a caller cannot escape the project export directory.
+    if (Path(output_name).name != output_name or "\\" in output_name or "/" in output_name
+            or output_name in {".", ".."} or not output_name.lower().endswith(".mp4")):
+        session.delete(job)
+        session.commit()
+        raise HTTPException(status_code=422, detail="output_filename must be a plain .mp4 filename")
+    project_export_dir = settings.exports_dir / project.id
+    try:
+        output_path = resolve_within(project_export_dir, Path(output_name))
+    except UnsafePathError as exc:
+        session.delete(job)
+        session.commit()
+        raise HTTPException(status_code=422, detail="Invalid output path") from exc
 
     get_job_manager().submit(
         job.id,
-        lambda handle: _run_render_job(job.id, settings, timeline, media_paths, output_path),
+        lambda handle: _run_render_job(job.id, settings, timeline, media_paths, media_has_audio, output_path, handle),
     )
 
     return job
@@ -145,7 +185,5 @@ def cancel_render_job(job_id: str, session: Session = Depends(get_session)) -> d
     if job is None:
         raise HTTPException(status_code=404, detail="Render job not found")
     cancelled = get_job_manager().cancel(job_id)
-    if cancelled and job.status in ("queued", "running"):
-        job.status = "cancelled"
-        session.commit()
-    return {"cancelled": cancelled}
+    # The worker owns the terminal state transition after FFmpeg has stopped.
+    return {"cancelled": cancelled, "status": job.status}

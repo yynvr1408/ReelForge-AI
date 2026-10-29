@@ -21,6 +21,18 @@ from app.core.config import Settings, get_settings
 from app.media.ffprobe import ProbeError, probe_media
 from app.media.import_service import MediaImportError, import_media_file
 from app.security.auth import require_service_token
+from app.database.models import FeedbackEntry, TrainingJob
+from app.database.session import get_session, session_scope
+from app.jobs.manager import JobHandle, get_job_manager
+from app.training.pacing_model import (
+    TrainingCancelled,
+    TrainingError,
+    model_status,
+    promote_candidate,
+    rollback_model,
+    train_candidate,
+)
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/training", tags=["training"], dependencies=[Depends(require_service_token)])
 
@@ -97,3 +109,168 @@ def delete_input_reel(filename: str, settings: Settings = Depends(get_settings))
         raise HTTPException(status_code=404, detail="Input reel not found")
     resolved.unlink()
     return {"deleted": True}
+
+
+@router.get("/models/pacing")
+def get_pacing_model_status(settings: Settings = Depends(get_settings)) -> dict:
+    return model_status(settings.checkpoints_dir)
+
+
+@router.post("/models/pacing/train")
+def train_pacing_model(
+    settings: Settings = Depends(get_settings), session: Session = Depends(get_session)
+) -> dict:
+    entries = (
+        session.query(FeedbackEntry)
+        .filter(FeedbackEntry.subject == "timeline_pacing")
+        .order_by(FeedbackEntry.created_at.asc())
+        .limit(10000)
+        .all()
+    )
+    try:
+        candidate = train_candidate(entries, settings.checkpoints_dir)
+    except TrainingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"candidate": candidate, **model_status(settings.checkpoints_dir)}
+
+
+def _training_job_json(job: TrainingJob) -> dict:
+    return {
+        "id": job.id,
+        "status": job.status,
+        "stage": job.stage,
+        "progress": job.progress,
+        "error_message": job.error_message,
+        "candidate": job.candidate_json,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+    }
+
+
+def _set_training_job(job_id: str, **updates) -> TrainingJob | None:
+    with session_scope() as session:
+        job = session.get(TrainingJob, job_id)
+        if job is None:
+            return None
+        for key, value in updates.items():
+            setattr(job, key, value)
+        session.commit()
+        session.refresh(job)
+        return job
+
+
+@router.get("/models/pacing/runs/active")
+def get_active_pacing_training(session: Session = Depends(get_session)) -> dict | None:
+    job = (
+        session.query(TrainingJob)
+        .filter(TrainingJob.status.in_(["queued", "running", "cancel_requested"]))
+        .order_by(TrainingJob.created_at.desc())
+        .first()
+    )
+    return _training_job_json(job) if job else None
+
+
+@router.post("/models/pacing/train/start")
+def start_pacing_training(
+    settings: Settings = Depends(get_settings), session: Session = Depends(get_session)
+) -> dict:
+    active = (
+        session.query(TrainingJob)
+        .filter(TrainingJob.status.in_(["queued", "running", "cancel_requested"]))
+        .order_by(TrainingJob.created_at.desc())
+        .first()
+    )
+    if active is not None:
+        return _training_job_json(active)
+
+    job = TrainingJob(status="queued", stage="queued", progress=0.0)
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    job_id = job.id
+
+    def run(handle: JobHandle) -> None:
+        current = _set_training_job(job_id, status="running", stage="preparing_dataset", progress=0.0)
+        if current is None:
+            return
+        try:
+            with session_scope() as worker_session:
+                entries = (
+                    worker_session.query(FeedbackEntry)
+                    .filter(FeedbackEntry.subject == "timeline_pacing")
+                    .order_by(FeedbackEntry.created_at.asc())
+                    .limit(10000)
+                    .all()
+                )
+
+            def report(stage: str, progress: float) -> None:
+                _set_training_job(job_id, stage=stage, progress=progress)
+
+            candidate = train_candidate(
+                entries,
+                settings.checkpoints_dir,
+                cancelled=handle.cancelled,
+                progress=report,
+            )
+        except TrainingCancelled:
+            _set_training_job(job_id, status="cancelled", stage="cancelled", progress=0.0)
+            return
+        except TrainingError as exc:
+            _set_training_job(job_id, status="failed", stage="failed", error_message=str(exc))
+            return
+        except Exception:
+            _set_training_job(
+                job_id,
+                status="failed",
+                stage="failed",
+                error_message="Training failed unexpectedly; see the processing service log",
+            )
+            return
+        _set_training_job(
+            job_id,
+            status="complete",
+            stage="complete",
+            progress=1.0,
+            candidate_json=candidate,
+        )
+
+    get_job_manager().submit(job_id, run)
+    return _training_job_json(job)
+
+
+@router.get("/models/pacing/runs/{job_id}")
+def get_pacing_training(job_id: str, session: Session = Depends(get_session)) -> dict:
+    job = session.get(TrainingJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Training run not found")
+    return _training_job_json(job)
+
+
+@router.post("/models/pacing/runs/{job_id}/cancel")
+def cancel_pacing_training(job_id: str, session: Session = Depends(get_session)) -> dict:
+    job = session.get(TrainingJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Training run not found")
+    if job.status in {"queued", "running"}:
+        if get_job_manager().cancel(job_id):
+            job.status = "cancel_requested"
+            job.stage = "cancel_requested"
+            session.commit()
+            session.refresh(job)
+    return _training_job_json(job)
+
+
+@router.post("/models/pacing/promote")
+def promote_pacing_model(settings: Settings = Depends(get_settings)) -> dict:
+    try:
+        return promote_candidate(settings.checkpoints_dir)
+    except TrainingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/models/pacing/rollback")
+def rollback_pacing_model(settings: Settings = Depends(get_settings)) -> dict:
+    try:
+        return rollback_model(settings.checkpoints_dir)
+    except TrainingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

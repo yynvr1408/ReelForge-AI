@@ -15,6 +15,8 @@ from pathlib import Path
 from scenedetect import SceneManager, open_video
 from scenedetect.detectors import ContentDetector
 
+from app.analysis.cancellation import AnalysisCancelled, check_cancelled
+
 
 class SceneDetectionError(RuntimeError):
     pass
@@ -35,6 +37,7 @@ def analyze_scenes(
     video_path: Path,
     threshold: float = 27.0,
     downscale_factor: int | None = None,
+    cancelled=None,
 ) -> SceneAnalysis:
     """Detect scene cuts using content-aware frame-difference analysis.
 
@@ -53,9 +56,15 @@ def analyze_scenes(
     if downscale_factor:
         scene_manager.downscale = downscale_factor
 
+    def cancellation_callback(_frame, _frame_number):
+        check_cancelled(cancelled)
+
     try:
-        scene_manager.detect_scenes(video=video)
+        check_cancelled(cancelled)
+        scene_manager.detect_scenes(video=video, callback=cancellation_callback)
         scene_list = scene_manager.get_scene_list()
+    except AnalysisCancelled:
+        raise
     except Exception as exc:
         raise SceneDetectionError(f"Scene detection failed: {exc}") from exc
 

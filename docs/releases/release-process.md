@@ -28,9 +28,11 @@
 
 The processing service (FastAPI + OpenCV + PySceneDetect, normally a Python venv) is frozen into a self-contained executable with PyInstaller (`services/processing/reelforge-processing.spec`), so installs don't need Python at all. This happens automatically:
 
-1. `forge.config.mts`'s `prePackage` hook runs `pyinstaller reelforge-processing.spec` before every `package`/`make`/`release`, producing `services/processing/dist/reelforge-processing/`.
+1. `forge.config.mts`'s `prePackage` hook runs `pyinstaller reelforge-processing.spec` before every `package`/`make`/`release`, producing `services/processing/dist/rf/` (the short folder name keeps Squirrel's extracted paths within `MAX_PATH`).
 2. `packagerConfig.extraResource` copies that folder, plus `node_modules/ffmpeg-ffprobe-static` (FFmpeg/FFprobe binaries), into the packaged app's `resources/`.
-3. `src/main/paths.ts` spawns `resources/reelforge-processing/reelforge-processing.exe` directly in packaged builds (vs. `python.exe app/main.py` in dev).
+3. `src/main/paths.ts` spawns `resources/rf/reelforge-processing.exe` directly in packaged builds (vs. `python.exe app/main.py` in dev).
+
+`npm run package` writes to the repository's `build/` folder. `npm run make` writes to `b/` with a short temp path; the bundled processing runtime also uses the short `rf/` folder name. Together these keep Squirrel.Windows under its legacy MAX_PATH limit. Generated folders are ignored by Git.
 
 This is verified, not assumed: the packaged `.exe` was launched directly (not through dev mode) and the bundled service reached its ready state with a listening port, confirmed via `processing-service.stdout.log`'s `[lifecycle]` entries. If you add a new Python dependency that PyInstaller can't auto-detect (common for packages with dynamic imports or data files, like `scenedetect`/`cv2` already needed `collect_all` in the spec), the symptom is the frozen exe crashing on first *use* of that code path, not at startup — always test an actual reference-video import/analyze after rebuilding, not just that the exe launches.
 

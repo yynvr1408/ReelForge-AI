@@ -18,8 +18,10 @@
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
-    "make": "electron-forge make",
-    "release": "electron-forge release",
+    "make": "node scripts/make-with-short-path.mjs",
+    "forge:make": "electron-forge make",
+    "release": "node scripts/make-with-short-path.mjs release",
+    "forge:release": "electron-forge release",
     "icons": "node scripts/generate-icon.mjs",
     "lint": "oxlint && oxfmt --check",
     "lint:fix": "oxlint --fix && oxfmt --write",

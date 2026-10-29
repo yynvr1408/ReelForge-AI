@@ -8,7 +8,7 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const processingDir = path.resolve(
@@ -18,11 +18,15 @@ const processingDir = path.resolve(
   'services',
   'processing',
 );
-const processingDistDir = path.join(
-  processingDir,
-  'dist',
-  'reelforge-processing',
+const processingDistDir = path.join(processingDir, 'dist', 'rf');
+const electronZipDir = path.join(
+  import.meta.dirname,
+  '.cache',
+  'electron-zips',
 );
+const shortBuildTempDir =
+  process.env.REELFORGE_BUILD_TEMP_DIR ||
+  path.resolve(import.meta.dirname, '..', '..', '.tmp');
 
 /**
  * Builds the processing service into a self-contained executable
@@ -60,9 +64,78 @@ function buildProcessingServiceExecutable(): void {
   }
 }
 
+function cacheLocalWindowsElectron(platform: string, arch: string): void {
+  if (
+    process.platform !== 'win32' ||
+    platform !== 'win32' ||
+    arch !== process.arch
+  ) {
+    return;
+  }
+  const electronDir = path.join(
+    import.meta.dirname,
+    'node_modules',
+    'electron',
+  );
+  const electronVersion = JSON.parse(
+    readFileSync(path.join(electronDir, 'package.json'), 'utf8'),
+  ).version as string;
+  const zipPath = path.join(
+    electronZipDir,
+    `electron-v${electronVersion}-${platform}-${arch}.zip`,
+  );
+  if (existsSync(zipPath)) return;
+
+  const script = path.join(
+    import.meta.dirname,
+    'scripts',
+    'zip-electron-runtime.ps1',
+  );
+  const runtimeDir = path.join(electronDir, 'dist');
+  if (!existsSync(path.join(runtimeDir, 'electron.exe'))) {
+    throw new Error(
+      `The installed Electron runtime is missing from ${runtimeDir}`,
+    );
+  }
+  mkdirSync(electronZipDir, { recursive: true });
+  console.log(
+    '[forge] Caching the installed Electron runtime for offline packaging...',
+  );
+  execFileSync(
+    'powershell.exe',
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      script,
+      runtimeDir,
+      zipPath,
+    ],
+    { stdio: 'inherit' },
+  );
+  if (!existsSync(zipPath)) {
+    throw new Error(
+      `Could not create the local Electron archive at ${zipPath}`,
+    );
+  }
+}
+
 const config: ForgeConfig = {
+  // Keep the release root short: Squirrel.Windows extracts packages using
+  // legacy MAX_PATH APIs, and this app bundles a deep PyInstaller runtime.
+  outDir:
+    process.env.REELFORGE_BUILD_OUT_DIR ||
+    path.resolve(import.meta.dirname, '..', '..', 'build'),
   packagerConfig: {
     asar: true,
+    ...(process.platform === 'win32' && process.arch === 'x64'
+      ? {
+          electronZipDir,
+          tmpdir: path.join(import.meta.dirname, '.cache', 'packager-tmp'),
+        }
+      : {}),
     // electron-packager picks the right extension per platform from
     // this base name (icon.ico on win32, icon.icns on darwin, ignored
     // on linux). Generated from assets/icon.png via
@@ -75,8 +148,19 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   hooks: {
-    prePackage: async () => {
+    preMake: async () => {
+      if (process.platform === 'win32') {
+        mkdirSync(shortBuildTempDir, { recursive: true });
+        // Squirrel.Windows still uses MAX_PATH during package extraction.
+        // The sandbox's default temp path plus the frozen Python runtime
+        // exceeds that legacy limit, so keep Forge maker temp paths short.
+        process.env.TEMP = shortBuildTempDir;
+        process.env.TMP = shortBuildTempDir;
+      }
+    },
+    prePackage: async (_forgeConfig, platform, arch) => {
       buildProcessingServiceExecutable();
+      cacheLocalWindowsElectron(platform, arch);
     },
   },
   makers: [

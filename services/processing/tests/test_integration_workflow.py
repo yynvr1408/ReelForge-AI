@@ -64,6 +64,12 @@ def test_full_editing_workflow(app_client, synthetic_clip_factory):
     assert len(timeline["tracks"][0]["clips"]) >= 1
 
     # 6. Render the timeline.
+    rejected_output = client.post(
+        "/render/start",
+        json={"project_id": project["id"], "timeline": timeline, "output_filename": "../outside.mp4"},
+    )
+    assert rejected_output.status_code == 422
+
     render_started = client.post(
         "/render/start", json={"project_id": project["id"], "timeline": timeline}
     ).json()
@@ -72,6 +78,8 @@ def test_full_editing_workflow(app_client, synthetic_clip_factory):
     finished = _wait_for_job(client, render_started["id"])
     assert finished["status"] == "complete", finished.get("error_message")
     assert finished["validation_json"]["is_valid"] is True
+    assert finished["validation_json"]["quality_report"]["available"] is True
+    assert isinstance(finished["validation_json"]["quality_report"]["warnings"], list)
     assert finished["output_path"]
 
     from pathlib import Path

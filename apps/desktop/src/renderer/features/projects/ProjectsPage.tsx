@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, FolderOpen } from 'lucide-react';
+import { Plus, Trash2, FolderOpen, History } from 'lucide-react';
 
-import type { Project } from '../../../shared/ipc-contract';
+import type { Project, ProjectVersion } from '../../../shared/ipc-contract';
 import { useAppStore } from '../../stores/useAppStore';
 import { useServiceStatus } from '../../hooks/useServiceStatus';
 
@@ -13,6 +13,12 @@ export function ProjectsPage() {
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(
+    null,
+  );
+  const [versionsByProject, setVersionsByProject] = useState<
+    Record<string, ProjectVersion[]>
+  >({});
 
   async function refresh() {
     const list = await window.reelforge.listProjects();
@@ -41,6 +47,43 @@ export function ProjectsPage() {
   async function handleDelete(id: string) {
     await window.reelforge.deleteProject(id);
     await refresh();
+  }
+
+  async function toggleHistory(projectId: string) {
+    if (expandedProjectId === projectId) {
+      setExpandedProjectId(null);
+      return;
+    }
+    try {
+      const versions = await window.reelforge.listProjectVersions(projectId);
+      setVersionsByProject((current) => ({
+        ...current,
+        [projectId]: versions,
+      }));
+      setExpandedProjectId(projectId);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not load project history',
+      );
+    }
+  }
+
+  async function restoreVersion(projectId: string, versionId: string) {
+    try {
+      await window.reelforge.restoreProjectVersion(projectId, versionId);
+      const versions = await window.reelforge.listProjectVersions(projectId);
+      setVersionsByProject((current) => ({
+        ...current,
+        [projectId]: versions,
+      }));
+      await refresh();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not restore project version',
+      );
+    }
   }
 
   if (status.state !== 'ready') {
@@ -82,7 +125,7 @@ export function ProjectsPage() {
           {projects.map((project) => (
             <li
               key={project.id}
-              className="flex items-center justify-between rounded-lg border border-white/10 bg-neutral-950 px-4 py-3"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-neutral-950 px-4 py-3"
             >
               <div>
                 <div className="text-sm font-medium text-neutral-100">
@@ -102,12 +145,52 @@ export function ProjectsPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => void toggleHistory(project.id)}
+                  className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-neutral-300 hover:bg-white/5"
+                >
+                  <History size={14} /> History
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleDelete(project.id)}
                   className="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
                 >
                   <Trash2 size={14} /> Delete
                 </button>
               </div>
+              {expandedProjectId === project.id && (
+                <div className="basis-full border-t border-white/10 pt-3">
+                  <p className="mb-2 text-xs font-medium text-neutral-300">
+                    Saved versions
+                  </p>
+                  <ul className="flex flex-col gap-2">
+                    {(versionsByProject[project.id] ?? []).map((version) => (
+                      <li
+                        key={version.id}
+                        className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-xs"
+                      >
+                        <span className="text-neutral-400">
+                          v{version.version_number} · {version.reason} ·{' '}
+                          {new Date(version.created_at).toLocaleString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void restoreVersion(project.id, version.id)
+                          }
+                          disabled={
+                            version.version_number ===
+                            versionsByProject[project.id]?.[0]?.version_number
+                          }
+                          className="rounded border border-white/10 px-2 py-1 text-neutral-300 disabled:opacity-40"
+                        >
+                          Restore
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </li>
           ))}
         </ul>
