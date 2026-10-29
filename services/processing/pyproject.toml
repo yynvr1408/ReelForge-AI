@@ -10,7 +10,7 @@ dependencies = [
     "sqlalchemy>=2.0,<2.1",
     "scenedetect>=0.6.4,<0.7",
     "opencv-python-headless>=4.10,<4.11",
-    "numpy>=1.26,<2",
+    "numpy>=1.26,<3",
 ]
 
 [project.optional-dependencies]
