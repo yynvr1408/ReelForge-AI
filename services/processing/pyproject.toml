@@ -5,7 +5,7 @@ description = "ReelForge AI local processing service (media analysis, timeline p
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115,<0.116",
-    "uvicorn[standard]>=0.32,<0.33",
+    "uvicorn[standard]>=0.32,<0.55",
     "pydantic>=2.9,<3",
     "sqlalchemy>=2.0,<2.1",
     "scenedetect>=0.6.4,<0.7",
