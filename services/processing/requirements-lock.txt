@@ -28,7 +28,7 @@ python-dotenv==1.2.4
 pywin32-ctypes==0.2.3
 PyYAML==6.0.3
 -e git+https://github.com/yynvr1408/ReelForge-AI.git@10ce16327848b97b830c3bdfb578e3ca4c054dd1#egg=reelforge_processing&subdirectory=services\processing
-scenedetect==0.6.7.1
+scenedetect==0.7.2
 setuptools==84.2.1
 SQLAlchemy==2.0.55
 starlette==0.46.2
