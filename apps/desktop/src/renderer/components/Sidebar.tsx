@@ -8,6 +8,7 @@ import {
   GraduationCap,
   Boxes,
   ListVideo,
+  Sparkles,
   Settings as SettingsIcon,
 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ const NAV_ITEMS: Array<{
   { id: 'training-studio', label: 'Training Studio', icon: GraduationCap },
   { id: 'model-manager', label: 'Model Manager', icon: Boxes },
   { id: 'render-queue', label: 'Render Queue', icon: ListVideo },
+  { id: 'updates', label: 'Updates', icon: Sparkles },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
 

@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, type BrowserWindow } from 'electron';
+import { app, ipcMain, dialog, shell, type BrowserWindow } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type { ServiceClient } from './serviceClient';
@@ -638,4 +638,107 @@ export function registerIpcHandlers(
       );
     },
   );
+
+  ipcMain.handle(IPC_CHANNELS.appVersion, async () => {
+    return {
+      version: app.getVersion(),
+      isPackaged: app.isPackaged,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => {
+    const currentVersion = app.getVersion();
+    try {
+      const response = await fetch(
+        'https://api.github.com/repos/yynvr1408/ReelForge-AI/releases/latest',
+        {
+          headers: {
+            'User-Agent': 'ReelForge-AI-Desktop',
+            Accept: 'application/vnd.github.v3+json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return {
+            currentVersion,
+            latestVersion: null,
+            updateAvailable: false,
+            releaseName: null,
+            releaseNotes: null,
+            publishedAt: null,
+            htmlUrl: null,
+            installerUrl: null,
+            assets: [],
+            error: 'No releases published yet on GitHub repository.',
+          };
+        }
+        throw new Error(`GitHub API returned HTTP ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        tag_name: string;
+        name: string;
+        body: string;
+        published_at: string;
+        html_url: string;
+        assets: Array<{
+          name: string;
+          browser_download_url: string;
+          size: number;
+          content_type: string;
+        }>;
+      };
+
+      const cleanTag = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
+      const cleanCurrent = currentVersion.replace(/^v/, '');
+      const updateAvailable = Boolean(cleanTag && cleanTag !== cleanCurrent);
+
+      const assets = (data.assets || []).map((a) => ({
+        name: a.name,
+        browserDownloadUrl: a.browser_download_url,
+        sizeBytes: a.size,
+        contentType: a.content_type,
+      }));
+
+      const setupAsset =
+        assets.find(
+          (a) =>
+            a.name.toLowerCase().endsWith('.exe') &&
+            (a.name.toLowerCase().includes('setup') ||
+              a.name.toLowerCase().includes('reelforge')),
+        ) || assets.find((a) => a.name.toLowerCase().endsWith('.exe'));
+
+      return {
+        currentVersion,
+        latestVersion: cleanTag || null,
+        updateAvailable,
+        releaseName: data.name || data.tag_name || null,
+        releaseNotes: data.body || '',
+        publishedAt: data.published_at || null,
+        htmlUrl: data.html_url || null,
+        installerUrl: setupAsset
+          ? setupAsset.browserDownloadUrl
+          : data.html_url,
+        assets,
+      };
+    } catch (err) {
+      return {
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        releaseName: null,
+        releaseNotes: null,
+        publishedAt: null,
+        htmlUrl: null,
+        installerUrl: null,
+        assets: [],
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Could not connect to GitHub releases',
+      };
+    }
+  });
 }

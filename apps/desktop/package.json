@@ -1,7 +1,7 @@
 {
   "name": "reelforge-ai-desktop",
   "productName": "ReelForge AI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "AI-assisted desktop video editor with reference-video style learning.",
   "keywords": [],

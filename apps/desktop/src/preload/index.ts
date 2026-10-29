@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type {
+  AppUpdateCheckResult,
+  AppVersionInfo,
   ClearCacheResult,
   DatasetManifest,
   EditingFeedback,
@@ -353,6 +355,12 @@ const reelforgeApi = {
     projectId?: string;
   }): Promise<DatasetManifest> {
     return ipcRenderer.invoke(IPC_CHANNELS.trainingDatasetManifest, filters);
+  },
+  getAppVersion(): Promise<AppVersionInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appVersion);
+  },
+  checkForUpdates(): Promise<AppUpdateCheckResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates);
   },
 };
 

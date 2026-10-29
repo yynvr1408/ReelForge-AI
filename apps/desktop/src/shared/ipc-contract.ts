@@ -73,6 +73,8 @@ export const IPC_CHANNELS = {
   timelineAdapters: 'reelforge:timeline-adapters',
   timelineAlternatives: 'reelforge:timeline-alternatives',
   trainingDatasetManifest: 'reelforge:training-dataset-manifest',
+  appVersion: 'reelforge:app-version',
+  checkForUpdates: 'reelforge:check-for-updates',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -364,4 +366,29 @@ export interface DatasetManifest {
   validation_status: string;
   validation_message: string;
   checksum_sha256: string;
+}
+
+export interface AppVersionInfo {
+  version: string;
+  isPackaged: boolean;
+}
+
+export interface ReleaseAsset {
+  name: string;
+  browserDownloadUrl: string;
+  sizeBytes: number;
+  contentType: string;
+}
+
+export interface AppUpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseName: string | null;
+  releaseNotes: string | null;
+  publishedAt: string | null;
+  htmlUrl: string | null;
+  installerUrl: string | null;
+  assets: ReleaseAsset[];
+  error?: string;
 }

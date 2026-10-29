@@ -10,6 +10,7 @@ export type NavSection =
   | 'training-studio'
   | 'model-manager'
   | 'render-queue'
+  | 'updates'
   | 'settings';
 
 interface AppState {

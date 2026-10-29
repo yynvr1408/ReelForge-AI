@@ -12,6 +12,7 @@ import { RenderQueuePage } from '../features/render-queue/RenderQueuePage';
 import { TrainingStudioPage } from '../features/training-studio/TrainingStudioPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { ModelManagerPage } from '../features/model-manager/ModelManagerPage';
+import { UpdatesPage } from '../features/updates/UpdatesPage';
 
 const SECTION_TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -23,6 +24,7 @@ const SECTION_TITLES: Record<string, string> = {
   'training-studio': 'Training Studio',
   'model-manager': 'Model Manager',
   'render-queue': 'Render Queue',
+  updates: 'Updates',
   settings: 'Settings',
 };
 
@@ -48,6 +50,8 @@ function ActiveSection() {
       return <TrainingStudioPage />;
     case 'model-manager':
       return <ModelManagerPage />;
+    case 'updates':
+      return <UpdatesPage />;
     case 'settings':
       return <SettingsPage />;
     default:
