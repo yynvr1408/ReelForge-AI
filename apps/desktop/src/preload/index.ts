@@ -2,27 +2,31 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type {
-  InputReel,
+  ClearCacheResult,
+  DatasetManifest,
   EditingFeedback,
   ExportSettings,
+  InputReel,
+  LLMAdapterInfo,
   MediaAsset,
-  MediaPage,
   MediaBatchImportResult,
+  MediaPage,
+  ModelManagerInfo,
   Project,
   ProjectVersion,
-  ReferenceCollection,
   ReferenceAnalysisJob,
-  SimilarReference,
+  ReferenceCollection,
   ReferenceVideo,
   RenderJob,
   ServiceStatus,
+  SimilarReference,
   StorageInfo,
   StyleProfile,
   StyleProfileExport,
+  TimelineAlternative,
   TimelineGenerateResult,
   TrainingModelStatus,
   TrainingRun,
-  ModelManagerInfo,
 } from '../shared/ipc-contract';
 
 /**
@@ -247,6 +251,7 @@ const reelforgeApi = {
     targetDurationSeconds?: number,
     editingBrief?: string,
     exportSettings?: ExportSettings,
+    llmAdapter?: string,
   ): Promise<TimelineGenerateResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.timelineGenerate, {
       mediaIds,
@@ -255,6 +260,7 @@ const reelforgeApi = {
       targetDurationSeconds,
       editingBrief,
       exportSettings,
+      llmAdapter,
     });
   },
 
@@ -328,6 +334,25 @@ const reelforgeApi = {
 
   getStorageInfo(): Promise<StorageInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.storageInfo);
+  },
+  clearCache(): Promise<ClearCacheResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storageCacheClear);
+  },
+  listLLMAdapters(): Promise<LLMAdapterInfo[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.timelineAdapters);
+  },
+  generateTimelineAlternatives(payload: {
+    editingBrief: string;
+    llmAdapter?: string;
+    count?: number;
+  }): Promise<TimelineAlternative[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.timelineAlternatives, payload);
+  },
+  getDatasetManifest(filters?: {
+    styleProfileId?: string;
+    projectId?: string;
+  }): Promise<DatasetManifest> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingDatasetManifest, filters);
   },
 };
 

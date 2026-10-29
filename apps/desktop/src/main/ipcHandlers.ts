@@ -447,6 +447,7 @@ export function registerIpcHandlers(
         styleProfileId?: string;
         targetDurationSeconds?: number;
         editingBrief?: string;
+        llmAdapter?: string;
         exportSettings?: {
           width: number;
           height: number;
@@ -464,6 +465,7 @@ export function registerIpcHandlers(
         style_profile_id: payload.styleProfileId,
         target_duration_seconds: payload.targetDurationSeconds,
         editing_brief: payload.editingBrief,
+        llm_adapter: payload.llmAdapter,
         export_settings: payload.exportSettings,
       });
     },
@@ -597,4 +599,43 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.storageInfo, async () => {
     return requireClient().get('/storage');
   });
+
+  ipcMain.handle(IPC_CHANNELS.storageCacheClear, async () => {
+    return requireClient().post('/storage/cache/clear', {});
+  });
+
+  ipcMain.handle(IPC_CHANNELS.timelineAdapters, async () => {
+    return requireClient().get('/timeline/adapters');
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.timelineAlternatives,
+    async (
+      _event,
+      payload: { editingBrief: string; llmAdapter?: string; count?: number },
+    ) => {
+      return requireClient().post('/timeline/alternatives', {
+        editing_brief: payload.editingBrief,
+        llm_adapter: payload.llmAdapter,
+        count: payload.count ?? 3,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.trainingDatasetManifest,
+    async (
+      _event,
+      filters?: { styleProfileId?: string; projectId?: string },
+    ) => {
+      const params = new URLSearchParams();
+      if (filters?.styleProfileId)
+        params.set('style_profile_id', filters.styleProfileId);
+      if (filters?.projectId) params.set('project_id', filters.projectId);
+      const query = params.toString();
+      return requireClient().get(
+        `/training/dataset/manifest${query ? `?${query}` : ''}`,
+      );
+    },
+  );
 }

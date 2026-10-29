@@ -24,6 +24,7 @@ from app.security.auth import require_service_token
 from app.database.models import FeedbackEntry, TrainingJob
 from app.database.session import get_session, session_scope
 from app.jobs.manager import JobHandle, get_job_manager
+from app.training.dataset import DatasetManifest, build_dataset_manifest
 from app.training.pacing_model import (
     TrainingCancelled,
     TrainingError,
@@ -274,3 +275,13 @@ def rollback_pacing_model(settings: Settings = Depends(get_settings)) -> dict:
         return rollback_model(settings.checkpoints_dir)
     except TrainingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/dataset/manifest", response_model=DatasetManifest)
+def get_dataset_manifest(
+    style_profile_id: str | None = None,
+    project_id: str | None = None,
+    session: Session = Depends(get_session),
+) -> DatasetManifest:
+    """Return a validated dataset manifest of collected pacing feedback."""
+    return build_dataset_manifest(session, style_profile_id=style_profile_id, project_id=project_id)

@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.database.session import get_session
 from app.editing_planner.rule_based import generate_timeline
 from app.editing_planner.brief_parser import parse_editing_brief
+from app.editing_planner.llm_adapters import get_adapter, list_available_adapters
 from app.security.auth import require_service_token
 from app.timeline.schema import ColorAdjustment, ExportSettings, Timeline
 from app.timeline.validator import is_valid, validate_timeline
@@ -27,6 +28,13 @@ class TimelineGenerateRequest(BaseModel):
     target_duration_seconds: float | None = Field(default=None, gt=0, le=900)
     export_settings: ExportSettings | None = None
     editing_brief: str | None = Field(default=None, max_length=1000)
+    llm_adapter: str | None = None
+
+
+class TimelineAlternativesRequest(BaseModel):
+    editing_brief: str = Field(..., max_length=1000)
+    llm_adapter: str | None = None
+    count: int = Field(default=3, ge=1, le=5)
 
 
 class TimelineValidateRequest(BaseModel):
@@ -49,7 +57,8 @@ def generate(payload: TimelineGenerateRequest, session: Session = Depends(get_se
     if any(asset.kind != "video" for asset in assets):
         raise HTTPException(status_code=422, detail="Timeline generation currently accepts video assets only")
 
-    interpretation = parse_editing_brief(payload.editing_brief)
+    adapter = get_adapter(payload.llm_adapter)
+    interpretation = adapter.parse_brief(payload.editing_brief)
 
     profile_json = None
     if payload.style_profile_id:
@@ -229,6 +238,17 @@ def generate(payload: TimelineGenerateRequest, session: Session = Depends(get_se
             "color_feedback_overridden_by_brief": preserve_original_colors,
         },
     }
+
+
+@router.get("/adapters")
+def get_adapters() -> list[dict]:
+    return list_available_adapters()
+
+
+@router.post("/alternatives")
+def get_alternatives(payload: TimelineAlternativesRequest) -> list[dict]:
+    adapter = get_adapter(payload.llm_adapter)
+    return adapter.generate_alternatives(payload.editing_brief, count=payload.count)
 
 
 @router.post("/validate", response_model=ValidationResponse)

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import type {
+  DatasetManifest,
   InputReel,
   StorageInfo,
   TrainingModelStatus,
@@ -38,6 +39,7 @@ export function TrainingStudioPage() {
   const [modelStatus, setModelStatus] = useState<TrainingModelStatus | null>(
     null,
   );
+  const [manifest, setManifest] = useState<DatasetManifest | null>(null);
   const [trainingRun, setTrainingRun] = useState<TrainingRun | null>(null);
   const [startingTraining, setStartingTraining] = useState(false);
   const training =
@@ -48,16 +50,19 @@ export function TrainingStudioPage() {
     );
 
   async function refresh() {
-    const [reelList, storageInfo, models, activeRun] = await Promise.all([
-      window.reelforge.listTrainingInputReels(),
-      window.reelforge.getStorageInfo(),
-      window.reelforge.getTrainingModelStatus(),
-      window.reelforge.getActivePacingTrainingRun(),
-    ]);
+    const [reelList, storageInfo, models, activeRun, datasetManifest] =
+      await Promise.all([
+        window.reelforge.listTrainingInputReels(),
+        window.reelforge.getStorageInfo(),
+        window.reelforge.getTrainingModelStatus(),
+        window.reelforge.getActivePacingTrainingRun(),
+        window.reelforge.getDatasetManifest(),
+      ]);
     setReels(reelList);
     setStorage(storageInfo);
     setModelStatus(models);
     setTrainingRun(activeRun);
+    setManifest(datasetManifest);
   }
 
   useEffect(() => {
@@ -247,6 +252,32 @@ export function TrainingStudioPage() {
           videos are not used as training examples and frames or identities are
           never modified.
         </p>
+        {manifest && (
+          <div className="mb-4 rounded-md border border-white/10 bg-neutral-900 p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-neutral-300">
+                Feedback Dataset Manifest
+              </span>
+              <span
+                className={`rounded px-1.5 py-0.5 text-[11px] ${
+                  manifest.meets_training_threshold
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-amber-500/10 text-amber-400'
+                }`}
+              >
+                {manifest.validation_status}
+              </span>
+            </div>
+            <div className="mt-1 text-xs text-neutral-400">
+              {manifest.total_samples} samples (too fast:{' '}
+              {manifest.class_distribution['too_fast'] ?? 0}, too slow:{' '}
+              {manifest.class_distribution['too_slow'] ?? 0})
+            </div>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              {manifest.validation_message}
+            </p>
+          </div>
+        )}
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
           <ModelCard label="Active model" model={modelStatus?.active ?? null} />
           <ModelCard

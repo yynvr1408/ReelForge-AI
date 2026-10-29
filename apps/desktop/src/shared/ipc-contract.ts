@@ -69,6 +69,10 @@ export const IPC_CHANNELS = {
   trainingPacingModelRollback: 'reelforge:training-pacing-model-rollback',
   modelManagerInfo: 'reelforge:model-manager-info',
   storageInfo: 'reelforge:storage-info',
+  storageCacheClear: 'reelforge:storage-cache-clear',
+  timelineAdapters: 'reelforge:timeline-adapters',
+  timelineAlternatives: 'reelforge:timeline-alternatives',
+  trainingDatasetManifest: 'reelforge:training-dataset-manifest',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -324,4 +328,40 @@ export interface StorageInfo {
   locations: StorageLocation[];
   free_bytes: number;
   total_bytes: number;
+}
+
+export interface ClearCacheResult {
+  reclaimed_bytes: number;
+  files_removed: number;
+  message: string;
+}
+
+export interface LLMAdapterInfo {
+  id: string;
+  name: string;
+  available: boolean;
+  is_default: boolean;
+}
+
+export interface TimelineAlternative {
+  name: string;
+  description: string;
+  shot_duration_seconds: number;
+  audio_priority?: string;
+  avoid_shake_candidates?: boolean;
+  [key: string]: unknown;
+}
+
+export interface DatasetManifest {
+  id: string;
+  task: string;
+  version: number;
+  created_at: string;
+  total_samples: number;
+  class_distribution: Record<string, number>;
+  is_balanced: boolean;
+  meets_training_threshold: boolean;
+  validation_status: string;
+  validation_message: string;
+  checksum_sha256: string;
 }

@@ -244,3 +244,20 @@ Reverse-chronological. Each entry: what changed, key files, what was verified.
 
 - Added sparse within-shot global-flow analysis when a brief asks to avoid shaky footage. Candidate moments with reversals are down-ranked with an explanation; clean sparse samples are not described as a stability guarantee. The added flow analysis is skipped for ordinary timeline requests.
 - Verification: available processing suite excluding the two Windows socket-blocked TestClient files passed (68 tests); desktop typecheck/lint passed; Windows `npm run package` succeeded; `git diff --check` passed. The app remains closed.
+
+## 2026-10-29 — LLM Adapters, Audio Intelligence, Dataset Manifests, Storage & Full Documentation
+
+- **Modular LLM Adapters (Phase 6)**: Added `services/processing/app/editing_planner/llm_adapters.py` with `BaseLLMAdapter`, `RuleBasedAdapter` (offline default), `LocalOllamaAdapter` (detects local Ollama instance with JSON schema enforcement and graceful offline fallback), and `CloudOpenAIAdapter`. Added alternative edit proposal generation (`generate_alternatives`: dynamic/upbeat, cinematic flow, balanced showcase) wired into EditorPage and IPC.
+- **Audio Intelligence (Phase 7 & 23)**: Added `services/processing/app/analysis/beat_tracking.py` for musical tempo quantization, monotonic cut-to-beat snapping, and musical sync scoring. Added `services/processing/app/analysis/transcription.py` for embedded subtitle extraction (SRT/mov_text), speech-activity caption generation, and offline transcription fallbacks.
+- **Training Studio Dataset Manifests (Phase 25)**: Added `services/processing/app/training/dataset.py` with `DatasetManifest`, calculating total samples, class distributions, balance status, threshold validation, and deterministic SHA-256 manifest hashing. Exposed via `GET /training/dataset/manifest` and wired into TrainingStudioPage.
+- **Storage Management (Phase 30)**: Added `POST /storage/cache/clear` endpoint in `services/processing/app/api/routes/storage.py` and connected one-click cache clearing in SettingsPage to safely purge temporary render files and cached thumbnails.
+- **Complete Specification Documentation (Phase 35)**: Authored all required architectural, testing, training, and user guide documentation files:
+  - `docs/architecture/system-overview.md`
+  - `docs/architecture/architecture-decisions.md`
+  - `docs/testing/test-strategy.md`
+  - `docs/training/training-guide.md`
+  - `docs/user-guide/reference-library.md`
+  - `docs/user-guide/video-editing.md`
+  - `docs/user-guide/offline-operation.md`
+- **Verification**: Backend processing test suite passed 82 tests; desktop frontend typecheck (`tsc --noEmit`) and linting (`oxlint` & `oxfmt --check`) passed with 0 errors and 0 warnings.
+

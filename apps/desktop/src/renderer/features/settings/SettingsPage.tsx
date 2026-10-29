@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, HardDrive, Trash2 } from 'lucide-react';
+import { Check, FolderOpen, HardDrive, RefreshCw, Trash2 } from 'lucide-react';
 
 import type {
+  ClearCacheResult,
   EditingFeedback,
   StorageInfo,
 } from '../../../shared/ipc-contract';
@@ -18,6 +19,8 @@ export function SettingsPage() {
   const status = useServiceStatus();
   const [info, setInfo] = useState<StorageInfo | null>(null);
   const [feedback, setFeedback] = useState<EditingFeedback[]>([]);
+  const [cacheResult, setCacheResult] = useState<ClearCacheResult | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
 
   useEffect(() => {
     if (status.state === 'ready') {
@@ -27,6 +30,18 @@ export function SettingsPage() {
       ]);
     }
   }, [status.state]);
+
+  async function handleClearCache() {
+    setClearingCache(true);
+    try {
+      const res = await window.reelforge.clearCache();
+      setCacheResult(res);
+      const updatedInfo = await window.reelforge.getStorageInfo();
+      setInfo(updatedInfo);
+    } finally {
+      setClearingCache(false);
+    }
+  }
 
   if (status.state !== 'ready') {
     return (
@@ -70,6 +85,34 @@ export function SettingsPage() {
             </li>
           ))}
         </ul>
+        <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
+          <div>
+            <div className="text-xs font-medium text-neutral-300">
+              Clear temporary cache
+            </div>
+            <div className="text-xs text-neutral-500">
+              Removes cached thumbnails and intermediate render files.
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={clearingCache}
+            onClick={() => void handleClearCache()}
+            className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-amber-300 hover:bg-white/5 disabled:opacity-50"
+          >
+            {clearingCache ? (
+              <RefreshCw size={13} className="animate-spin" />
+            ) : (
+              <Trash2 size={13} />
+            )}
+            Clear cache
+          </button>
+        </div>
+        {cacheResult && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-400">
+            <Check size={13} /> {cacheResult.message}
+          </p>
+        )}
       </section>
       <section className="rounded-lg border border-white/10 bg-neutral-950 p-5">
         <h2 className="mb-2 text-sm font-medium text-neutral-200">

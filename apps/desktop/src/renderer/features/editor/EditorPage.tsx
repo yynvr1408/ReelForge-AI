@@ -19,11 +19,13 @@ import {
 import { useAppStore } from '../../stores/useAppStore';
 import { useServiceStatus } from '../../hooks/useServiceStatus';
 import type {
+  LLMAdapterInfo,
   MediaAsset,
   Project,
   ProjectVersion,
   RenderJob,
   StyleProfile,
+  TimelineAlternative,
   TimelineGenerateResult,
 } from '../../../shared/ipc-contract';
 
@@ -98,6 +100,11 @@ export function EditorPage() {
   const [targetDuration, setTargetDuration] = useState<string>('');
   const [exportPreset, setExportPreset] = useState<ExportPreset>('vertical');
   const [editingBrief, setEditingBrief] = useState('');
+  const [adapters, setAdapters] = useState<LLMAdapterInfo[]>([]);
+  const [selectedAdapterId, setSelectedAdapterId] =
+    useState<string>('rule_based');
+  const [alternatives, setAlternatives] = useState<TimelineAlternative[]>([]);
+  const [loadingAlternatives, setLoadingAlternatives] = useState(false);
   const [generated, setGenerated] = useState<TimelineGenerateResult | null>(
     null,
   );
@@ -122,8 +129,10 @@ export function EditorPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (status.state === 'ready')
+    if (status.state === 'ready') {
       void window.reelforge.listProjects().then(setProjects);
+      void window.reelforge.listLLMAdapters().then(setAdapters);
+    }
   }, [status.state]);
 
   useEffect(() => {
@@ -234,6 +243,7 @@ export function EditorPage() {
           container: 'mp4',
           crf: 20,
         },
+        selectedAdapterId || undefined,
       );
       setGenerated(result);
       historyRef.current = { past: [], future: [] };
@@ -245,6 +255,25 @@ export function EditorPage() {
       );
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleFetchAlternatives() {
+    if (!editingBrief.trim()) return;
+    setLoadingAlternatives(true);
+    try {
+      const results = await window.reelforge.generateTimelineAlternatives({
+        editingBrief,
+        llmAdapter: selectedAdapterId,
+        count: 3,
+      });
+      setAlternatives(results);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to generate alternatives',
+      );
+    } finally {
+      setLoadingAlternatives(false);
     }
   }
 
@@ -849,6 +878,25 @@ export function EditorPage() {
               <option value="square">Square · 1080 × 1080</option>
             </select>
           </label>
+          {adapters.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-neutral-400">
+              AI assistant
+              <select
+                value={selectedAdapterId}
+                onChange={(event) => setSelectedAdapterId(event.target.value)}
+                className="rounded-md border border-white/10 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100"
+              >
+                {adapters.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}{' '}
+                    {!a.available && a.id !== 'rule_based'
+                      ? '(Unavailable)'
+                      : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="w-full text-sm text-neutral-400">
             Editing brief
             <input
@@ -858,17 +906,64 @@ export function EditorPage() {
               className="mt-1 w-full rounded-md border border-white/10 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500"
             />
           </label>
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={
-              busy === 'generating' ||
-              media.filter((asset) => asset.kind === 'video').length === 0
-            }
-            className="flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
-          >
-            <Wand2 size={14} /> Generate timeline
-          </button>
+          <div className="flex w-full items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={
+                  busy === 'generating' ||
+                  media.filter((asset) => asset.kind === 'video').length === 0
+                }
+                className="flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+              >
+                <Wand2 size={14} /> Generate timeline
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleFetchAlternatives()}
+                disabled={loadingAlternatives || !editingBrief.trim()}
+                className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs font-medium text-neutral-300 hover:bg-white/5 disabled:opacity-40"
+              >
+                {loadingAlternatives
+                  ? 'Generating options…'
+                  : 'Generate 3 alternative edits'}
+              </button>
+            </div>
+          </div>
+          {alternatives.length > 0 && (
+            <div className="flex w-full flex-col gap-2 rounded-md border border-white/10 bg-neutral-900/60 p-3">
+              <div className="text-xs font-semibold text-neutral-300">
+                Alternative Edit Proposals
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {alternatives.map((alt, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      if (alt.shot_duration_seconds)
+                        setTargetDuration(
+                          String(alt.target_duration_seconds || targetDuration),
+                        );
+                      setEditingBrief(
+                        `${editingBrief} · ${alt.name.toLowerCase()} (${alt.shot_duration_seconds}s pacing)`,
+                      );
+                      void handleGenerate();
+                    }}
+                    className="flex flex-col items-start rounded border border-white/10 bg-neutral-900 p-2 text-left hover:border-orange-500/50"
+                  >
+                    <span className="text-xs font-medium text-orange-400">
+                      {alt.name}
+                    </span>
+                    <span className="mt-1 text-[11px] text-neutral-400">
+                      {alt.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
