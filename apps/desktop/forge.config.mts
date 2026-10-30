@@ -130,10 +130,11 @@ const config: ForgeConfig = {
     path.resolve(import.meta.dirname, '..', '..', 'build'),
   packagerConfig: {
     asar: true,
+    overwrite: true,
+    tmpdir: false,
     ...(process.platform === 'win32' && process.arch === 'x64'
       ? {
           electronZipDir,
-          tmpdir: path.join(import.meta.dirname, '.cache', 'packager-tmp'),
         }
       : {}),
     // electron-packager picks the right extension per platform from
@@ -177,7 +178,10 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGitHub({
       repository: { owner: 'yynvr1408', name: 'reelforge-ai-releases' },
-      authToken: process.env.RELEASES_TOKEN || process.env.GITHUB_TOKEN,
+      authToken:
+        process.env.RELEASES_TOKEN ||
+        process.env.GH_TOKEN ||
+        process.env.GITHUB_TOKEN,
       prerelease: false,
       generateReleaseNotes: true,
     }),
