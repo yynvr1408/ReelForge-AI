@@ -42,8 +42,8 @@ Because GitHub Actions runs in `ReelForge-AI` but pushes artifacts to `reelforge
 1. Bump the version in `apps/desktop/package.json` (`"version"`) and commit it.
 2. Tag and push:
    ```bash
-   git tag v0.2.0
-   git push origin v0.2.0
+   git tag v0.2.2
+   git push origin v0.2.2
    ```
    The tag **must** match the `package.json` version exactly (the release workflow verifies this to prevent Squirrel version mismatch errors).
 3. The `release` workflow builds the PyInstaller frozen backend and Electron installer, then pushes the release to `yynvr1408/reelforge-ai-releases/releases`.

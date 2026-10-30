@@ -96,7 +96,7 @@ export function UpdatesPage() {
     }
   }
 
-  const currentVersion = appInfo?.version || '0.2.0';
+  const currentVersion = appInfo?.version || '0.2.2';
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">

@@ -34,6 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Disable git autocrlf
+        run: git config --global core.autocrlf false
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -81,3 +84,4 @@ jobs:
         run: npm run release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}

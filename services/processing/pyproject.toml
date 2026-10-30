@@ -1,6 +1,6 @@
 [project]
 name = "reelforge-processing"
-version = "0.2.0"
+version = "0.2.2"
 description = "ReelForge AI local processing service (media analysis, timeline planning, rendering)"
 requires-python = ">=3.12,<3.13"
 dependencies = [

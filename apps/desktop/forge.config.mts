@@ -177,6 +177,7 @@ const config: ForgeConfig = {
   publishers: [
     new PublisherGitHub({
       repository: { owner: 'yynvr1408', name: 'reelforge-ai-releases' },
+      authToken: process.env.RELEASES_TOKEN || process.env.GITHUB_TOKEN,
       prerelease: false,
       generateReleaseNotes: true,
     }),
