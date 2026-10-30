@@ -184,6 +184,7 @@ const config: ForgeConfig = {
         process.env.RELEASES_TOKEN ||
         process.env.GH_TOKEN ||
         process.env.GITHUB_TOKEN,
+      draft: false,
       prerelease: false,
       generateReleaseNotes: true,
     }),
