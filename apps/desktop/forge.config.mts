@@ -8,7 +8,7 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const processingDir = path.resolve(
@@ -93,32 +93,31 @@ function cacheLocalWindowsElectron(platform: string, arch: string): void {
   );
   const runtimeDir = path.join(electronDir, 'dist');
   if (!existsSync(path.join(runtimeDir, 'electron.exe'))) {
-    throw new Error(
-      `The installed Electron runtime is missing from ${runtimeDir}`,
-    );
+    // When building in fresh CI or environments where node_modules/electron/dist
+    // is not extracted, allow @electron/get to fetch the prebuilt runtime instead.
+    return;
   }
   mkdirSync(electronZipDir, { recursive: true });
   console.log(
     '[forge] Caching the installed Electron runtime for offline packaging...',
   );
-  execFileSync(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      script,
-      runtimeDir,
-      zipPath,
-    ],
-    { stdio: 'inherit' },
-  );
-  if (!existsSync(zipPath)) {
-    throw new Error(
-      `Could not create the local Electron archive at ${zipPath}`,
+  try {
+    execFileSync(
+      'powershell.exe',
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        script,
+        runtimeDir,
+        zipPath,
+      ],
+      { stdio: 'inherit' },
     );
+  } catch (err) {
+    console.warn('[forge] Could not create local Electron archive:', err);
   }
 }
 
@@ -132,7 +131,10 @@ const config: ForgeConfig = {
     asar: true,
     overwrite: true,
     tmpdir: false,
-    ...(process.platform === 'win32' && process.arch === 'x64'
+    ...(process.platform === 'win32' &&
+    process.arch === 'x64' &&
+    existsSync(electronZipDir) &&
+    readdirSync(electronZipDir).length > 0
       ? {
           electronZipDir,
         }
