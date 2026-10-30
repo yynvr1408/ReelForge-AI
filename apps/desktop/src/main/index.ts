@@ -189,7 +189,7 @@ function startAutoUpdater(): void {
     updateElectronApp({
       updateSource: {
         type: UpdateSourceType.ElectronPublicUpdateService,
-        repo: 'yynvr1408/ReelForge-AI',
+        repo: 'yynvr1408/reelforge-ai-releases',
       },
       updateInterval: '1 hour',
       logger: {

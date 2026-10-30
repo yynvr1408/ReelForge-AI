@@ -1,4 +1,8 @@
 import { app, ipcMain, dialog, shell, type BrowserWindow } from 'electron';
+import fs from 'node:fs';
+import path from 'node:path';
+import https from 'node:https';
+import { spawn } from 'node:child_process';
 
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type { ServiceClient } from './serviceClient';
@@ -639,6 +643,73 @@ export function registerIpcHandlers(
     },
   );
 
+  const RELEASES_OWNER = 'yynvr1408';
+  const RELEASES_REPO = 'reelforge-ai-releases';
+
+  function compareVersions(a: string, b: string): number {
+    const partsA = a
+      .replace(/^v/, '')
+      .split('.')
+      .map((p) => parseInt(p, 10) || 0);
+    const partsB = b
+      .replace(/^v/, '')
+      .split('.')
+      .map((p) => parseInt(p, 10) || 0);
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const diff = (partsA[i] || 0) - (partsB[i] || 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  }
+
+  function downloadReleaseFile(url: string, destPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      function get(currentUrl: string, redirectCount = 0) {
+        if (redirectCount > 5) {
+          reject(new Error('Too many redirects while downloading update'));
+          return;
+        }
+        const req = https.get(
+          currentUrl,
+          { headers: { 'User-Agent': 'ReelForge-AI-Desktop' } },
+          (res) => {
+            if (
+              res.statusCode &&
+              res.statusCode >= 300 &&
+              res.statusCode < 400 &&
+              res.headers.location
+            ) {
+              get(res.headers.location, redirectCount + 1);
+              return;
+            }
+            if (res.statusCode !== 200) {
+              reject(new Error(`Download failed with HTTP ${res.statusCode}`));
+              return;
+            }
+            const fileStream = fs.createWriteStream(destPath);
+            res.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close(() => resolve());
+            });
+            fileStream.on('error', (err) => {
+              try {
+                fs.unlinkSync(destPath);
+              } catch {}
+              reject(err);
+            });
+          },
+        );
+        req.on('error', (err) => {
+          try {
+            fs.unlinkSync(destPath);
+          } catch {}
+          reject(err);
+        });
+      }
+      get(url);
+    });
+  }
+
   ipcMain.handle(IPC_CHANNELS.appVersion, async () => {
     return {
       version: app.getVersion(),
@@ -650,7 +721,7 @@ export function registerIpcHandlers(
     const currentVersion = app.getVersion();
     try {
       const response = await fetch(
-        'https://api.github.com/repos/yynvr1408/ReelForge-AI/releases/latest',
+        `https://api.github.com/repos/${RELEASES_OWNER}/${RELEASES_REPO}/releases/latest`,
         {
           headers: {
             'User-Agent': 'ReelForge-AI-Desktop',
@@ -668,10 +739,11 @@ export function registerIpcHandlers(
             releaseName: null,
             releaseNotes: null,
             publishedAt: null,
-            htmlUrl: null,
+            htmlUrl: `https://github.com/${RELEASES_OWNER}/${RELEASES_REPO}/releases`,
             installerUrl: null,
             assets: [],
-            error: 'No releases published yet on GitHub repository.',
+            releasesRepo: `${RELEASES_OWNER}/${RELEASES_REPO}`,
+            error: `No releases published yet on https://github.com/${RELEASES_OWNER}/${RELEASES_REPO}`,
           };
         }
         throw new Error(`GitHub API returned HTTP ${response.status}`);
@@ -693,7 +765,9 @@ export function registerIpcHandlers(
 
       const cleanTag = data.tag_name ? data.tag_name.replace(/^v/, '') : '';
       const cleanCurrent = currentVersion.replace(/^v/, '');
-      const updateAvailable = Boolean(cleanTag && cleanTag !== cleanCurrent);
+      const updateAvailable = Boolean(
+        cleanTag && compareVersions(cleanTag, cleanCurrent) > 0,
+      );
 
       const assets = (data.assets || []).map((a) => ({
         name: a.name,
@@ -722,6 +796,7 @@ export function registerIpcHandlers(
           ? setupAsset.browserDownloadUrl
           : data.html_url,
         assets,
+        releasesRepo: `${RELEASES_OWNER}/${RELEASES_REPO}`,
       };
     } catch (err) {
       return {
@@ -731,14 +806,118 @@ export function registerIpcHandlers(
         releaseName: null,
         releaseNotes: null,
         publishedAt: null,
-        htmlUrl: null,
+        htmlUrl: `https://github.com/${RELEASES_OWNER}/${RELEASES_REPO}/releases`,
         installerUrl: null,
         assets: [],
+        releasesRepo: `${RELEASES_OWNER}/${RELEASES_REPO}`,
         error:
           err instanceof Error
             ? err.message
-            : 'Could not connect to GitHub releases',
+            : `Could not connect to GitHub releases on ${RELEASES_OWNER}/${RELEASES_REPO}`,
       };
     }
   });
+
+  ipcMain.handle(IPC_CHANNELS.listReleases, async () => {
+    const currentVersion = app.getVersion();
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${RELEASES_OWNER}/${RELEASES_REPO}/releases`,
+        {
+          headers: {
+            'User-Agent': 'ReelForge-AI-Desktop',
+            Accept: 'application/vnd.github.v3+json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) return [];
+        throw new Error(`GitHub API returned HTTP ${response.status}`);
+      }
+
+      const releases = (await response.json()) as Array<{
+        tag_name: string;
+        name: string;
+        body: string;
+        draft: boolean;
+        published_at: string;
+        html_url: string;
+        assets: Array<{
+          name: string;
+          browser_download_url: string;
+          size: number;
+        }>;
+      }>;
+
+      return releases
+        .filter((r) => !r.draft)
+        .map((r) => {
+          const version = (r.tag_name || '').replace(/^v/, '');
+          const setupAsset =
+            (r.assets || []).find(
+              (a) =>
+                a.name.toLowerCase().endsWith('.exe') &&
+                (a.name.toLowerCase().includes('setup') ||
+                  a.name.toLowerCase().includes('reelforge')),
+            ) ||
+            (r.assets || []).find((a) => a.name.toLowerCase().endsWith('.exe'));
+
+          const cmp = compareVersions(version, currentVersion);
+          return {
+            version,
+            tagName: r.tag_name,
+            name: r.name || r.tag_name,
+            publishedAt: r.published_at || null,
+            releaseNotes: r.body || '',
+            htmlUrl: r.html_url,
+            installerUrl: setupAsset ? setupAsset.browser_download_url : null,
+            installerName: setupAsset ? setupAsset.name : null,
+            installerSize: setupAsset ? setupAsset.size : null,
+            isCurrent: cmp === 0,
+            isNewer: cmp > 0,
+          };
+        });
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.installRelease,
+    async (_event, payload: { installerUrl: string; version: string }) => {
+      const { installerUrl, version } = payload;
+      if (!installerUrl) {
+        throw new Error('No installer download URL provided');
+      }
+
+      const tempDir = app.getPath('temp');
+      const filename = `ReelForge-Setup-${version.replace(/[^a-zA-Z0-9.-]/g, '_')}.exe`;
+      const targetPath = path.join(tempDir, filename);
+
+      await downloadReleaseFile(installerUrl, targetPath);
+
+      if (!fs.existsSync(targetPath)) {
+        throw new Error('Downloaded installer file could not be found');
+      }
+
+      // Launch the Windows installer detached
+      const child = spawn(targetPath, [], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+
+      // Gracefully close the app so the installer can update the installation
+      setTimeout(() => {
+        app.quit();
+      }, 1500);
+
+      return {
+        success: true,
+        message:
+          'Installer launched successfully. ReelForge AI is now closing to apply update.',
+      };
+    },
+  );
 }

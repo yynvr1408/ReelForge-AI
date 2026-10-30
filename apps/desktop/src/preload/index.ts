@@ -9,6 +9,7 @@ import type {
   EditingFeedback,
   ExportSettings,
   InputReel,
+  InstallReleaseResult,
   LLMAdapterInfo,
   MediaAsset,
   MediaBatchImportResult,
@@ -19,6 +20,7 @@ import type {
   ReferenceAnalysisJob,
   ReferenceCollection,
   ReferenceVideo,
+  ReleaseInfo,
   RenderJob,
   ServiceStatus,
   SimilarReference,
@@ -361,6 +363,15 @@ const reelforgeApi = {
   },
   checkForUpdates(): Promise<AppUpdateCheckResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates);
+  },
+  listReleases(): Promise<ReleaseInfo[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.listReleases);
+  },
+  installRelease(payload: {
+    installerUrl: string;
+    version: string;
+  }): Promise<InstallReleaseResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.installRelease, payload);
   },
 };
 

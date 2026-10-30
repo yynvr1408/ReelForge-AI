@@ -75,6 +75,8 @@ export const IPC_CHANNELS = {
   trainingDatasetManifest: 'reelforge:training-dataset-manifest',
   appVersion: 'reelforge:app-version',
   checkForUpdates: 'reelforge:check-for-updates',
+  listReleases: 'reelforge:list-releases',
+  installRelease: 'reelforge:install-release',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -390,5 +392,25 @@ export interface AppUpdateCheckResult {
   htmlUrl: string | null;
   installerUrl: string | null;
   assets: ReleaseAsset[];
+  releasesRepo: string;
   error?: string;
+}
+
+export interface ReleaseInfo {
+  version: string;
+  tagName: string;
+  name: string;
+  publishedAt: string | null;
+  releaseNotes: string;
+  htmlUrl: string;
+  installerUrl: string | null;
+  installerName: string | null;
+  installerSize: number | null;
+  isCurrent: boolean;
+  isNewer: boolean;
+}
+
+export interface InstallReleaseResult {
+  success: boolean;
+  message: string;
 }

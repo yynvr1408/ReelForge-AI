@@ -1,10 +1,18 @@
 name: Release
 
-# Triggered by pushing a version tag, e.g.:
-#   git tag v0.2.0 && git push origin v0.2.0
-# The tag's version MUST match apps/desktop/package.json's "version"
-# field (Squirrel's update feed keys off that version) — see
-# docs/releases/release-process.md.
+# Publishes a Windows release: push a version tag (e.g. git tag v0.2.0 && git push origin v0.2.0)
+# or run via workflow_dispatch in GitHub Actions.
+#
+# This builds the installer and publishes it to the SEPARATE public release repository:
+#   yynvr1408/reelforge-ai-releases
+# (matching apps/desktop/forge.config.mts publisher config) - never cluttering this source repo.
+#
+# To publish from this private/source repo to the separate releases repo:
+#   1. Create the releases repo: yynvr1408/reelforge-ai-releases
+#   2. Create a GitHub Personal Access Token (PAT) with "Contents: Read and write" access
+#      scoped to yynvr1408/reelforge-ai-releases (Settings > Developer settings > Personal access tokens).
+#   3. Add it as a secret named RELEASES_TOKEN on THIS repo (Settings > Secrets and variables > Actions).
+# When RELEASES_TOKEN is set, it publishes directly to the separate releases repo.
 on:
   push:
     tags:
@@ -72,4 +80,4 @@ jobs:
         working-directory: apps/desktop
         run: npm run release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASES_TOKEN || secrets.GITHUB_TOKEN }}

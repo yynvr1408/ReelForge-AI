@@ -1,12 +1,43 @@
-# Release process
+# Release Process & Distribution
+
+ReelForge AI uses a decoupled two-repository release pipeline mirroring the architecture used in `hotel-management`:
+
+1. **Source Code Repository**: `yynvr1408/ReelForge-AI` (Private or public development, issue tracking, CI test pipeline, and packaging workflow).
+2. **Dedicated Distribution Repository**: `yynvr1408/reelforge-ai-releases` (Public repository dedicated solely to hosting published GitHub Release artifacts, `.exe` installers, and Squirrel update manifests).
 
 ## How it works
 
-1. **CI** (`.github/workflows/ci.yml`) runs on every push/PR to `main`/`master`: processing-service pytest, desktop typecheck/lint, and a packaging smoke test (`electron-forge package`, not a full installer build).
-2. **Release** (`.github/workflows/release.yml`) runs only when a tag matching `v*.*.*` is pushed. It builds the Windows Squirrel installer and publishes it as a GitHub Release via `electron-forge release` (which uses `@electron-forge/publisher-github`, configured in `apps/desktop/forge.config.mts`).
-3. **Auto-update**: the packaged app calls `updateElectronApp()` (from the `update-electron-app` package, wired in `apps/desktop/src/main/index.ts`, dev-mode no-op) on startup and then every hour. It talks to Electron's public update service (`update.electronjs.org`), which reads your GitHub Releases' Squirrel artifacts (`RELEASES`, `*.nupkg`) directly — no separate update server to run.
+1. **CI** (`.github/workflows/ci.yml`) runs on every push/PR to `main`/`master`: processing-service pytest, desktop typecheck/lint, and a packaging smoke test (`electron-forge package`).
+2. **Release** (`.github/workflows/release.yml`) runs when a tag matching `v*.*.*` is pushed or when manually triggered via `workflow_dispatch`. It packages the self-contained app (freezing the Python service via PyInstaller) and publishes the Windows Squirrel installer and release assets directly to `yynvr1408/reelforge-ai-releases` using `@electron-forge/publisher-github`.
+3. **In-App Updates Tab & Installer Download**:
+   - The desktop app contains an **Updates** tab (`/updates`) querying the dedicated releases repository (`yynvr1408/reelforge-ai-releases`).
+   - Users can see their current version, check for the latest release, view release notes, and click **Download & Install Now** (downloads the latest setup `.exe`, runs it, and restarts the app).
+   - A complete **Published Release History** list allows one-click switching or rolling back to any previously published release version.
+4. **Automatic Background Updates**:
+   - `apps/desktop/src/main/index.ts` initializes `updateElectronApp({ repo: 'yynvr1408/reelforge-ai-releases' })` on startup and every hour.
+   - Electron's update proxy reads from `yynvr1408/reelforge-ai-releases`'s Squirrel manifests (`RELEASES`, `*.nupkg`) to apply seamless delta updates.
 
-## Cutting a release
+## One-Time Setup: Dedicated Release Repo & Token
+
+Because GitHub Actions runs in `ReelForge-AI` but pushes artifacts to `reelforge-ai-releases`, the default `GITHUB_TOKEN` does not have cross-repository permissions. A Personal Access Token (PAT) is required:
+
+1. **Create the Release Repository**:
+   - Go to GitHub and create a new repository: `https://github.com/new`
+   - Repository name: `reelforge-ai-releases`
+   - Visibility: **Public** (recommended so desktop users can download installers without credentials).
+2. **Create a GitHub Personal Access Token (PAT)**:
+   - Go to GitHub **Settings** -> **Developer Settings** -> **Personal Access Tokens** -> **Fine-grained tokens** (or Tokens Classic).
+   - Name: `ReelForge AI Release Publisher`
+   - Repository access: Select **Only select repositories** -> choose `reelforge-ai-releases`.
+   - Permissions: **Contents: Read and write**.
+   - Generate and copy the token.
+3. **Add Secret to ReelForge-AI**:
+   - Go to repository **Settings** -> **Secrets and variables** -> **Actions** in `yynvr1408/ReelForge-AI`.
+   - Click **New repository secret**.
+   - Name: `RELEASES_TOKEN`
+   - Value: Paste the PAT copied above.
+
+## Cutting a Release
 
 1. Bump the version in `apps/desktop/package.json` (`"version"`) and commit it.
 2. Tag and push:
@@ -14,28 +45,18 @@
    git tag v0.2.0
    git push origin v0.2.0
    ```
-   The tag **must** match the `package.json` version exactly (the release workflow checks this and fails fast if it doesn't — Squirrel's update feed keys off the version number, so a mismatch would silently break updates for existing installs).
-3. The `release` workflow builds and publishes automatically. No extra GitHub secret setup is needed — it uses the default `GITHUB_TOKEN` that Actions provides, scoped to `contents: write` for this repo only.
-4. Once published, users on an earlier version will see an update prompt within an hour of their next launch (or immediately on next launch, since it also checks on startup).
+   The tag **must** match the `package.json` version exactly (the release workflow verifies this to prevent Squirrel version mismatch errors).
+3. The `release` workflow builds the PyInstaller frozen backend and Electron installer, then pushes the release to `yynvr1408/reelforge-ai-releases/releases`.
+4. Users can open the in-app **Updates** tab to download and install the new release immediately, or let the background updater handle it automatically.
 
-## What you do NOT need to do
+## How the Packaged App Bundles Its Backend
 
-- No manual installer upload — the workflow does it.
-- No separate update server — Electron's public service handles the Squirrel feed from your GitHub Releases directly.
-- No code signing is configured yet (see below) — Windows SmartScreen will warn unsigned installers; that's expected until a certificate is added.
+The processing service (FastAPI + OpenCV + PySceneDetect) is frozen into a self-contained executable with PyInstaller (`services/processing/reelforge-processing.spec`), so end users do not need Python or CUDA toolkits installed:
 
-## How the packaged app bundles its own backend
+1. `forge.config.mts`'s `prePackage` hook executes `pyinstaller reelforge-processing.spec`, writing to `services/processing/dist/rf/`.
+2. `packagerConfig.extraResource` bundles `rf/` and `ffmpeg-ffprobe-static` into the packaged application's `resources/` folder.
+3. `src/main/paths.ts` launches `resources/rf/reelforge-processing.exe` directly in packaged builds.
 
-The processing service (FastAPI + OpenCV + PySceneDetect, normally a Python venv) is frozen into a self-contained executable with PyInstaller (`services/processing/reelforge-processing.spec`), so installs don't need Python at all. This happens automatically:
+## Code Signing
 
-1. `forge.config.mts`'s `prePackage` hook runs `pyinstaller reelforge-processing.spec` before every `package`/`make`/`release`, producing `services/processing/dist/rf/` (the short folder name keeps Squirrel's extracted paths within `MAX_PATH`).
-2. `packagerConfig.extraResource` copies that folder, plus `node_modules/ffmpeg-ffprobe-static` (FFmpeg/FFprobe binaries), into the packaged app's `resources/`.
-3. `src/main/paths.ts` spawns `resources/rf/reelforge-processing.exe` directly in packaged builds (vs. `python.exe app/main.py` in dev).
-
-`npm run package` writes to the repository's `build/` folder. `npm run make` writes to `b/` with a short temp path; the bundled processing runtime also uses the short `rf/` folder name. Together these keep Squirrel.Windows under its legacy MAX_PATH limit. Generated folders are ignored by Git.
-
-This is verified, not assumed: the packaged `.exe` was launched directly (not through dev mode) and the bundled service reached its ready state with a listening port, confirmed via `processing-service.stdout.log`'s `[lifecycle]` entries. If you add a new Python dependency that PyInstaller can't auto-detect (common for packages with dynamic imports or data files, like `scenedetect`/`cv2` already needed `collect_all` in the spec), the symptom is the frozen exe crashing on first *use* of that code path, not at startup — always test an actual reference-video import/analyze after rebuilding, not just that the exe launches.
-
-## Code signing
-
-Not set up. An unsigned Squirrel installer will trigger SmartScreen warnings on first run. Add a code-signing certificate and wire it into `MakerSquirrel`'s config (`certificateFile`/`certificatePassword`, or an Azure Trusted Signing / EV cert flow) before any public distribution.
+An unsigned Squirrel installer will trigger SmartScreen warnings on first run in Windows. To eliminate warnings in public production distribution, configure a code signing certificate in `forge.config.mts` (`MakerSquirrel` `certificateFile` / `certificatePassword` or Azure Trusted Signing).
