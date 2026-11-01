@@ -653,6 +653,37 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(
+    IPC_CHANNELS.timelineSnapBeats,
+    async (
+      _event,
+      payload: {
+        timeline: Record<string, unknown>;
+        tempoBpm?: number;
+        maxDriftSeconds?: number;
+      },
+    ) => {
+      return requireClient().post('/timeline/snap-to-beats', {
+        timeline: payload.timeline,
+        tempo_bpm: payload.tempoBpm ?? 120.0,
+        max_drift_seconds: payload.maxDriftSeconds ?? 0.25,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.timelineAutoCaptions,
+    async (
+      _event,
+      payload: { projectId: string; timeline?: Record<string, unknown> },
+    ) => {
+      return requireClient().post('/timeline/auto-captions', {
+        project_id: payload.projectId,
+        timeline: payload.timeline,
+      });
+    },
+  );
+
+  ipcMain.handle(
     IPC_CHANNELS.trainingDatasetManifest,
     async (
       _event,

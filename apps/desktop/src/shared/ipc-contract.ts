@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   storageCacheClear: 'reelforge:storage-cache-clear',
   timelineAdapters: 'reelforge:timeline-adapters',
   timelineAlternatives: 'reelforge:timeline-alternatives',
+  timelineSnapBeats: 'reelforge:timeline-snap-beats',
+  timelineAutoCaptions: 'reelforge:timeline-auto-captions',
   trainingDatasetManifest: 'reelforge:training-dataset-manifest',
   appVersion: 'reelforge:app-version',
   checkForUpdates: 'reelforge:check-for-updates',
@@ -170,6 +172,7 @@ export interface ReferenceAnalysisJob {
   reference_id: string;
   status: 'queued' | 'running' | 'complete' | 'failed' | 'cancelled';
   stage: string | null;
+  progress: number | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -237,6 +240,29 @@ export interface TimelineGenerateResult {
     is_valid: boolean;
     issues: Array<{ severity: string; message: string }>;
   };
+}
+
+export interface MusicSyncReport {
+  sync_score: number;
+  aligned_cut_count: number;
+  total_cut_count: number;
+  mean_drift_seconds: number;
+}
+
+export interface SnapBeatsResult {
+  timeline: Record<string, unknown>;
+  sync_report: MusicSyncReport;
+}
+
+export interface AutoCaptionsResult {
+  captions: Array<{
+    text: string;
+    start_seconds: number;
+    end_seconds: number;
+    position: 'top' | 'center' | 'bottom';
+  }>;
+  source: string;
+  count: number;
 }
 
 export interface ExportSettings {

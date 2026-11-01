@@ -78,3 +78,52 @@ def test_generate_speech_timed_captions():
     assert captions[0]["start_seconds"] == 1.2
     assert captions[0]["end_seconds"] == 3.8
     assert captions[0]["position"] == "bottom"
+
+
+def test_snap_timeline_to_beats_route(app_client):
+    timeline = {
+        "tracks": [
+            {
+                "id": "t-video",
+                "kind": "video",
+                "clips": [
+                    {
+                        "id": "c1",
+                        "source_media_id": "m1",
+                        "source_in_seconds": 0.0,
+                        "source_out_seconds": 1.05,
+                        "timeline_position_seconds": 0.0,
+                    },
+                    {
+                        "id": "c2",
+                        "source_media_id": "m2",
+                        "source_in_seconds": 0.0,
+                        "source_out_seconds": 1.95,
+                        "timeline_position_seconds": 1.05,
+                    },
+                ],
+                "overlays": [],
+            }
+        ],
+        "export_settings": {
+            "width": 1080,
+            "height": 1920,
+            "frame_rate": 30.0,
+            "video_codec": "libx264",
+            "audio_codec": "aac",
+            "container": "mp4",
+            "crf": 20,
+        },
+    }
+    # Snap with 60 BPM (1s beats at 0.0, 1.0, 2.0, 3.0)
+    res = app_client.post(
+        "/timeline/snap-to-beats",
+        json={"timeline": timeline, "tempo_bpm": 60.0, "max_drift_seconds": 0.25},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "sync_report" in data
+    assert data["sync_report"]["sync_score"] > 0
+    # First cut was 1.05, should snap to 1.0
+    clips = data["timeline"]["tracks"][0]["clips"]
+    assert clips[0]["source_out_seconds"] == 1.0

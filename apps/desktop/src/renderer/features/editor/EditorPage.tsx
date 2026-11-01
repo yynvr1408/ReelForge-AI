@@ -15,6 +15,8 @@ import {
   Palette,
   History,
   CheckCircle2,
+  Music,
+  RefreshCw,
 } from 'lucide-react';
 
 import { useAppStore } from '../../stores/useAppStore';
@@ -22,6 +24,7 @@ import { useServiceStatus } from '../../hooks/useServiceStatus';
 import type {
   LLMAdapterInfo,
   MediaAsset,
+  MusicSyncReport,
   Project,
   ProjectVersion,
   RenderJob,
@@ -125,6 +128,14 @@ export function EditorPage() {
   const [captionEnd, setCaptionEnd] = useState('2');
   const [captionPosition, setCaptionPosition] =
     useState<EditableTextOverlay['position']>('bottom');
+  const [tempoBpm, setTempoBpm] = useState<number>(120);
+  const [syncScoreReport, setSyncScoreReport] =
+    useState<MusicSyncReport | null>(null);
+  const [busySnapBeats, setBusySnapBeats] = useState<boolean>(false);
+  const [busyAutoCaptions, setBusyAutoCaptions] = useState<boolean>(false);
+  const [captionNotification, setCaptionNotification] = useState<string | null>(
+    null,
+  );
   const [historyState, setHistoryState] = useState({
     canUndo: false,
     canRedo: false,
@@ -800,6 +811,73 @@ export function EditorPage() {
     commitTimeline(timeline);
   }
 
+  async function handleSnapToBeats() {
+    if (!generated?.timeline) return;
+    setBusySnapBeats(true);
+    setError(null);
+    try {
+      const result = await window.reelforge.snapTimelineToBeats({
+        timeline: generated.timeline,
+        tempoBpm,
+        maxDriftSeconds: 0.25,
+      });
+      commitTimeline(result.timeline as EditableTimeline);
+      setSyncScoreReport(result.sync_report);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not snap cuts to beats',
+      );
+    } finally {
+      setBusySnapBeats(false);
+    }
+  }
+
+  async function handleAutoGenerateCaptions() {
+    if (!activeProjectId) return;
+    setBusyAutoCaptions(true);
+    setError(null);
+    try {
+      const result = await window.reelforge.autoGenerateCaptions({
+        projectId: activeProjectId,
+        timeline: generated?.timeline,
+      });
+      if (result.captions.length === 0) {
+        setCaptionNotification(
+          'No spoken dialogue or embedded subtitle streams detected in footage.',
+        );
+        setTimeout(() => setCaptionNotification(null), 4000);
+        return;
+      }
+      const timeline = structuredClone(generated?.timeline) as
+        | EditableTimeline
+        | undefined;
+      if (!timeline) return;
+      let textTrack = timeline.tracks.find((track) => track.kind === 'text');
+      if (!textTrack) {
+        textTrack = {
+          id: `text-${Date.now()}`,
+          kind: 'text',
+          clips: [],
+          overlays: [],
+        };
+        timeline.tracks.push(textTrack);
+      }
+      textTrack.overlays ??= [];
+      textTrack.overlays.push(...result.captions);
+      commitTimeline(timeline);
+      setCaptionNotification(
+        `Generated ${result.captions.length} timed captions via ${result.source}`,
+      );
+      setTimeout(() => setCaptionNotification(null), 4000);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to auto-generate captions',
+      );
+    } finally {
+      setBusyAutoCaptions(false);
+    }
+  }
+
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -1118,7 +1196,26 @@ export function EditorPage() {
               >
                 Add caption
               </button>
+              <button
+                type="button"
+                onClick={() => void handleAutoGenerateCaptions()}
+                disabled={busyAutoCaptions}
+                className="flex items-center gap-1.5 rounded border border-orange-500/30 bg-orange-950/20 px-3 py-1.5 text-xs text-orange-300 hover:bg-orange-500/10 disabled:opacity-50"
+                title="Detect embedded subtitles or speech intervals across imported footage"
+              >
+                {busyAutoCaptions ? (
+                  <RefreshCw size={12} className="animate-spin" />
+                ) : (
+                  <Wand2 size={12} />
+                )}
+                Auto-generate captions from audio
+              </button>
             </div>
+            {captionNotification && (
+              <p className="mt-2 rounded border border-emerald-900/40 bg-emerald-950/40 px-2.5 py-1.5 text-xs text-emerald-400">
+                {captionNotification}
+              </p>
+            )}
             {captions.map((overlay, index) => (
               <div
                 key={`${overlay.start_seconds}-${index}`}
@@ -1143,6 +1240,54 @@ export function EditorPage() {
               Captions are burned into the original footage during export. They
               do not alter or generate scene content.
             </p>
+          </div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-2">
+            <span className="text-xs text-neutral-400">
+              {clips.length} clips ·{' '}
+              {clips
+                .reduce(
+                  (sum: number, c: any) =>
+                    sum +
+                    (c.source_out_seconds - c.source_in_seconds) /
+                      (c.playback_speed || 1),
+                  0,
+                )
+                .toFixed(1)}
+              s total duration
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-neutral-500">Music sync:</span>
+              <input
+                type="number"
+                min="60"
+                max="200"
+                step="1"
+                value={tempoBpm}
+                onChange={(e) => setTempoBpm(Number(e.target.value) || 120)}
+                className="w-16 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                title="Target Beats Per Minute"
+              />
+              <span className="text-[11px] text-neutral-500">BPM</span>
+              <button
+                type="button"
+                onClick={() => void handleSnapToBeats()}
+                disabled={clips.length < 2 || busySnapBeats}
+                className="flex items-center gap-1 rounded border border-sky-500/30 bg-sky-950/20 px-2.5 py-1 text-xs text-sky-300 hover:bg-sky-500/10 disabled:opacity-40"
+                title="Snap cut boundaries within 0.25s of musical beats"
+              >
+                <Music size={12} /> Snap cuts to beats
+              </button>
+              {syncScoreReport && (
+                <span
+                  className="rounded border border-sky-800/60 bg-sky-950 px-2 py-0.5 text-[11px] font-medium text-sky-300"
+                  title={`Mean drift: ${(syncScoreReport.mean_drift_seconds * 1000).toFixed(0)}ms`}
+                >
+                  {Math.round(syncScoreReport.sync_score * 100)}% on-beat (
+                  {syncScoreReport.aligned_cut_count}/
+                  {syncScoreReport.total_cut_count})
+                </span>
+              )}
+            </div>
           </div>
           <ol className="flex flex-col gap-1 text-xs text-neutral-400">
             {clips.map((clip: any, i: number) => (

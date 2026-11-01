@@ -58,6 +58,16 @@ def init_database(database_path: Path):
         cursor.close()
 
     Base.metadata.create_all(_engine)
+
+    # Ensure added columns exist on existing databases
+    with sqlite3.connect(database_path) as conn:
+        cursor = conn.cursor()
+        cols = [col[1] for col in cursor.execute("PRAGMA table_info(reference_analysis_jobs)").fetchall()]
+        if cols and "progress" not in cols:
+            cursor.execute("ALTER TABLE reference_analysis_jobs ADD COLUMN progress FLOAT")
+            conn.commit()
+        cursor.close()
+
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     with _SessionLocal() as session:

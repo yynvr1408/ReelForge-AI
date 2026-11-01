@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type {
   AppUpdateCheckResult,
   AppVersionInfo,
+  AutoCaptionsResult,
   ClearCacheResult,
   DatasetManifest,
   EditingFeedback,
@@ -24,6 +25,7 @@ import type {
   RenderJob,
   ServiceStatus,
   SimilarReference,
+  SnapBeatsResult,
   StorageInfo,
   StyleProfile,
   StyleProfileExport,
@@ -357,6 +359,19 @@ const reelforgeApi = {
     count?: number;
   }): Promise<TimelineAlternative[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.timelineAlternatives, payload);
+  },
+  snapTimelineToBeats(payload: {
+    timeline: Record<string, unknown>;
+    tempoBpm?: number;
+    maxDriftSeconds?: number;
+  }): Promise<SnapBeatsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.timelineSnapBeats, payload);
+  },
+  autoGenerateCaptions(payload: {
+    projectId: string;
+    timeline?: Record<string, unknown>;
+  }): Promise<AutoCaptionsResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.timelineAutoCaptions, payload);
   },
   getDatasetManifest(filters?: {
     styleProfileId?: string;

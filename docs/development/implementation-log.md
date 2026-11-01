@@ -279,3 +279,22 @@ Reverse-chronological. Each entry: what changed, key files, what was verified.
   - Desktop TypeScript typecheck (`tsc --noEmit`) passed with 0 errors.
   - Desktop linting (`oxlint` & `oxfmt --check`) passed with 0 errors and 0 warnings.
 
+## 2026-11-01 — Musical Beat Snapping, Dialogue Auto-Captions & Reference Progress
+
+- **Musical Beat Snapping & Sync Scoring (Master Prompt Sec 23 & Phase 7)**:
+  - Added `POST /timeline/snap-to-beats` in `services/processing/app/api/routes/timeline.py` leveraging monotonic cut snapping and tempo quantization from `app.analysis.beat_tracking`.
+  - Computes musical sync score percentage, aligned cut count, and mean drift in milliseconds.
+  - Added interactive "Snap cuts to beats" toolbar in `EditorPage.tsx` with configurable BPM selector, sync quality badge, and seamless undo/redo history.
+- **Speech Dialogue Transcription & Auto-Captions (Master Prompt Sec 15 & Limitation 19)**:
+  - Added `POST /timeline/auto-captions` in `services/processing/app/api/routes/timeline.py` connecting `transcribe_video_dialogue` (embedded subtitles, local whisper, or speech-activity heuristics).
+  - Automatically projects footage-level dialogue timestamps into cut timeline positions.
+  - Added "Auto-generate captions from audio" button in `EditorPage.tsx` caption controls that populates timed text overlays ready for preview and burn-in.
+- **Reference Analysis Progress Tracking (Limitation 17)**:
+  - Added `progress` column to `reference_analysis_jobs` table in `models.py` with automatic backward-compatible schema adjustment in `session.py`.
+  - Updated `_collect_analysis` and `_run_analysis_job` in `reference.py` to dispatch stage progress percentages (`scene_detection` 15%, `visual_analysis` 50%, `audio_analysis` 85%, `complete` 100%).
+  - Added live progress bars and percentage indicators to active analysis rows in `ReferenceLibraryPage.tsx`.
+- **Verification**:
+  - Processing test suite expanded to 85 passing tests (`test_snap_timeline_to_beats_route`).
+  - Desktop TypeScript typecheck (`tsc --noEmit`) passed with 0 errors.
+  - Desktop linting (`oxlint` & `oxfmt --check`) passed with 0 errors and 0 warnings.
+

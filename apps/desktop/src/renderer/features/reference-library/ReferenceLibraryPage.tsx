@@ -616,21 +616,34 @@ export function ReferenceLibraryPage() {
                 <div className="flex shrink-0 items-center gap-2">
                   {analysisJob?.reference_id === reference.id &&
                     ['queued', 'running'].includes(analysisJob.status) && (
-                      <>
-                        <span className="text-[11px] text-neutral-500">
-                          {analysisJob.status} ·{' '}
-                          {analysisJob.stage ?? 'starting'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void handleCancelAnalysis(analysisJob.id)
-                          }
-                          className="rounded border border-red-400/20 px-2 py-1 text-xs text-red-300 hover:bg-red-500/10"
-                        >
-                          Cancel
-                        </button>
-                      </>
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-amber-300">
+                            {analysisJob.stage ?? 'analyzing'}
+                            {analysisJob.progress !== null &&
+                            analysisJob.progress !== undefined
+                              ? ` (${Math.round(analysisJob.progress * 100)}%)`
+                              : ''}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleCancelAnalysis(analysisJob.id)
+                            }
+                            className="rounded border border-red-400/20 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/10"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <div className="h-1 w-24 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-amber-400 transition-all duration-300"
+                            style={{
+                              width: `${Math.min(100, Math.max(5, Math.round((analysisJob.progress ?? 0.05) * 100)))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
                     )}
                   <button
                     type="button"

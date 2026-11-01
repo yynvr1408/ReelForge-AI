@@ -161,6 +161,7 @@ class ReferenceAnalysisJob(Base):
     )
     status: Mapped[str] = mapped_column(String, default="queued")
     stage: Mapped[str | None] = mapped_column(String, nullable=True)
+    progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

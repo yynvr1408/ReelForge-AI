@@ -80,6 +80,7 @@ class ReferenceAnalysisJobResponse(BaseModel):
     reference_id: str
     status: str
     stage: str | None
+    progress: float | None = None
     error_message: str | None
     created_at: datetime
     updated_at: datetime
@@ -98,26 +99,28 @@ class SimilarReferenceResponse(BaseModel):
 def _collect_analysis(reference_path: Path, probe_json: dict | None, settings: Settings, cancelled=None, stage=None) -> dict:
     check_cancelled(cancelled)
     if stage:
-        stage("scene_detection")
+        stage("scene_detection", 0.15)
     analysis = asdict(analyze_scenes(reference_path, cancelled=cancelled))
     check_cancelled(cancelled)
     if stage:
-        stage("visual_analysis")
+        stage("visual_analysis", 0.50)
     analysis["visual"] = analyze_visual_features(reference_path, cancelled=cancelled)
     if probe_json and any(stream.get("codec_type") == "audio" for stream in probe_json.get("streams", [])):
         check_cancelled(cancelled)
         if stage:
-            stage("audio_analysis")
+            stage("audio_analysis", 0.85)
         analysis["audio"] = analyze_audio_features(settings.ffmpeg_path, reference_path, cancelled=cancelled)
     check_cancelled(cancelled)
     return analysis
 
 
-def _set_analysis_stage(job_id: str, stage: str) -> None:
+def _set_analysis_stage(job_id: str, stage: str, progress: float | None = None) -> None:
     with session_scope() as session:
         job = session.get(ReferenceAnalysisJob, job_id)
         if job is not None and job.status == "running":
             job.stage = stage
+            if progress is not None:
+                job.progress = progress
             session.commit()
 
 
@@ -134,6 +137,7 @@ def _run_analysis_job(job_id: str, settings: Settings, handle: JobHandle) -> Non
             return
         job.status = "running"
         job.stage = "scene_detection"
+        job.progress = 0.05
         reference.analysis_status = "running"
         session.commit()
 
@@ -150,7 +154,7 @@ def _run_analysis_job(job_id: str, settings: Settings, handle: JobHandle) -> Non
             probe_json,
             settings,
             cancelled=handle.cancelled,
-            stage=lambda value: _set_analysis_stage(job_id, value),
+            stage=lambda s, p=None: _set_analysis_stage(job_id, s, p),
         )
         check_cancelled(handle.cancelled)
         with session_scope() as session:
@@ -160,6 +164,7 @@ def _run_analysis_job(job_id: str, settings: Settings, handle: JobHandle) -> Non
                 return
             job.status = "complete"
             job.stage = "complete"
+            job.progress = 1.0
             if reference is not None:
                 reference.analysis_json = analysis
                 reference.analysis_status = "complete"
