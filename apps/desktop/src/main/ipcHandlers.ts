@@ -604,6 +604,32 @@ export function registerIpcHandlers(
     return requireClient().get('/storage');
   });
 
+  ipcMain.handle(
+    IPC_CHANNELS.storageLocationSelect,
+    async (_event, locationKey: string) => {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: `Select folder for ${locationKey}`,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return requireClient().get('/storage');
+      }
+      return requireClient().post('/storage/location', {
+        key: locationKey,
+        path: result.filePaths[0],
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.storageLocationReset,
+    async (_event, locationKey: string) => {
+      return requireClient().post('/storage/location/reset', {
+        key: locationKey,
+      });
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.storageCacheClear, async () => {
     return requireClient().post('/storage/cache/clear', {});
   });

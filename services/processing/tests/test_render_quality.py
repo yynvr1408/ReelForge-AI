@@ -28,3 +28,25 @@ def test_render_quality_flags_black_segments_and_near_clipping_audio(
     assert report["integrated_loudness_lufs"] is not None
     assert report["true_peak_dbfs"] is not None
     assert len(report["warnings"]) == 2
+
+
+def test_render_progress_dataclass_and_time_parser():
+    from app.rendering.ffmpeg_renderer import RenderProgress, _parse_time_str
+
+    prog = RenderProgress(
+        stage="encoding",
+        percent=0.452,
+        frames=135,
+        fps=30.0,
+        speed="1.5x",
+        eta_seconds=12.4,
+    )
+    assert prog.stage == "encoding"
+    assert prog.percent == 0.452
+    assert prog.frames == 135
+    assert prog.speed == "1.5x"
+    assert prog.eta_seconds == 12.4
+
+    assert _parse_time_str("00:01:30.500000") == 90.5
+    assert _parse_time_str("01:00:00.000000") == 3600.0
+    assert _parse_time_str("invalid") is None

@@ -13,7 +13,7 @@ import subprocess
 import os
 import sys
 import tempfile
-import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +33,21 @@ class RenderCancelled(RenderError):
 @dataclass(frozen=True)
 class RenderProgress:
     stage: str
+    percent: float | None = None
+    frames: int | None = None
+    fps: float | None = None
+    speed: str | None = None
+    eta_seconds: float | None = None
+
+
+def _parse_time_str(time_str: str) -> float | None:
+    try:
+        parts = time_str.split(":")
+        if len(parts) == 3:
+            return float(parts[0]) * 3600.0 + float(parts[1]) * 60.0 + float(parts[2])
+    except Exception:
+        pass
+    return None
 
 
 def _fontfile_option() -> str:
@@ -254,12 +269,13 @@ def _render_timeline_with_caption_files(
     )
 
     if on_progress:
-        on_progress(RenderProgress(stage="building_filter_graph"))
+        on_progress(RenderProgress(stage="building_filter_graph", percent=0.0))
 
     export = timeline.export_settings
     args = [
         str(ffmpeg_path),
         "-y",
+        "-progress", "pipe:1",
         *input_args,
         "-filter_complex", filter_complex,
         "-map", video_out,
@@ -272,17 +288,87 @@ def _render_timeline_with_caption_files(
     ]
 
     if on_progress:
-        on_progress(RenderProgress(stage="encoding"))
+        on_progress(RenderProgress(stage="encoding", percent=0.0))
 
     with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as stderr_file:
         caption_work_dir = caption_text_paths[0].parent if caption_text_paths else None
         process = subprocess.Popen(
             args,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=stderr_file,
             text=True,
+            bufsize=1,
             cwd=caption_work_dir,
         )
+
+        def _handle_progress_data(data: dict[str, str]):
+            if not on_progress:
+                return
+            out_time_us: int | None = None
+            if "out_time_us" in data and data["out_time_us"].isdigit():
+                out_time_us = int(data["out_time_us"])
+            elif "out_time_ms" in data and data["out_time_ms"].isdigit():
+                val = int(data["out_time_ms"])
+                out_time_us = val if val > 1000 else val * 1000
+            elif "out_time" in data:
+                parsed_secs = _parse_time_str(data["out_time"])
+                if parsed_secs is not None:
+                    out_time_us = int(parsed_secs * 1_000_000)
+
+            percent = None
+            current_seconds = None
+            if out_time_us is not None and timeline.total_duration_seconds > 0:
+                current_seconds = out_time_us / 1_000_000.0
+                percent = min(1.0, max(0.0, current_seconds / timeline.total_duration_seconds))
+
+            frames = int(data["frame"]) if "frame" in data and data["frame"].isdigit() else None
+            fps = None
+            if "fps" in data:
+                try:
+                    fps = float(data["fps"])
+                except ValueError:
+                    fps = None
+
+            speed_str = data.get("speed", "").strip() or None
+            eta_seconds = None
+            if speed_str and speed_str != "N/A" and current_seconds is not None and percent is not None and percent < 0.999:
+                try:
+                    speed_num = float(speed_str.rstrip("x").strip())
+                    if speed_num > 0.01:
+                        remaining_seconds = timeline.total_duration_seconds - current_seconds
+                        eta_seconds = max(0.0, remaining_seconds / speed_num)
+                except ValueError:
+                    pass
+
+            on_progress(
+                RenderProgress(
+                    stage="encoding",
+                    percent=percent,
+                    frames=frames,
+                    fps=fps,
+                    speed=speed_str,
+                    eta_seconds=eta_seconds,
+                )
+            )
+
+        def _read_stdout():
+            if process.stdout is None:
+                return
+            current_data: dict[str, str] = {}
+            for raw_line in iter(process.stdout.readline, ""):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    current_data[key.strip()] = value.strip()
+                    if key.strip() == "progress":
+                        _handle_progress_data(current_data)
+                        current_data = {}
+
+        progress_thread = threading.Thread(target=_read_stdout, daemon=True)
+        progress_thread.start()
+
         started = time.monotonic()
         while process.poll() is None:
             if cancelled and cancelled():
@@ -292,16 +378,30 @@ def _render_timeline_with_caption_files(
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+                if process.stdout:
+                    try:
+                        process.stdout.close()
+                    except Exception:
+                        pass
+                progress_thread.join(timeout=1.0)
                 output_path.unlink(missing_ok=True)
                 raise RenderCancelled("Render cancelled")
             if time.monotonic() - started > 600.0:
                 process.kill()
                 process.wait()
+                if process.stdout:
+                    try:
+                        process.stdout.close()
+                    except Exception:
+                        pass
+                progress_thread.join(timeout=1.0)
                 stderr_file.seek(0)
                 stderr = stderr_file.read()
                 output_path.unlink(missing_ok=True)
                 raise RenderError(f"ffmpeg render timed out: {stderr.strip()[-2000:]}")
             time.sleep(0.1)
+
+        progress_thread.join(timeout=2.0)
         stderr_file.seek(0)
         stderr = stderr_file.read()
     if process.returncode != 0:
@@ -312,6 +412,6 @@ def _render_timeline_with_caption_files(
         raise RenderError("ffmpeg reported success but produced no output file")
 
     if on_progress:
-        on_progress(RenderProgress(stage="complete"))
+        on_progress(RenderProgress(stage="complete", percent=1.0))
 
     return output_path

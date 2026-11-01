@@ -14,6 +14,7 @@ import {
   Trash2,
   Palette,
   History,
+  CheckCircle2,
 } from 'lucide-react';
 
 import { useAppStore } from '../../stores/useAppStore';
@@ -84,6 +85,13 @@ type EditableTimeline = {
   tracks: EditableTrack[];
   [key: string]: unknown;
 };
+
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
 
 export function EditorPage() {
   const status = useServiceStatus();
@@ -384,7 +392,7 @@ export function EditorPage() {
           if (pollRef.current) clearInterval(pollRef.current);
           setBusy(null);
         }
-      }, 800);
+      }, 500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Render failed to start');
       setBusy(null);
@@ -1510,31 +1518,125 @@ export function EditorPage() {
 
       {renderJob && (
         <section className="rounded-lg border border-white/10 bg-neutral-950 p-5">
-          <h3 className="mb-2 text-sm font-medium text-neutral-200">
-            4. Render status
-          </h3>
-          <p className="text-sm text-neutral-400">
-            Status: <span className="text-neutral-200">{renderJob.status}</span>
-            {renderJob.stage ? ` · stage: ${renderJob.stage}` : ''}
-          </p>
-          {['queued', 'running'].includes(renderJob.status) && (
-            <button
-              type="button"
-              onClick={handleCancelRender}
-              className="mt-3 rounded-md border border-red-400/30 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10"
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-neutral-200">
+              4. Render status
+            </h3>
+            <span
+              className={`rounded px-2 py-0.5 text-xs font-medium ${
+                renderJob.status === 'complete'
+                  ? 'border border-emerald-800/60 bg-emerald-950 text-emerald-400'
+                  : renderJob.status === 'running'
+                    ? 'border border-amber-800/60 bg-amber-950 text-amber-300'
+                    : renderJob.status === 'failed'
+                      ? 'border border-red-800/60 bg-red-950 text-red-300'
+                      : 'border border-white/10 bg-white/5 text-neutral-400'
+              }`}
             >
-              Cancel render
-            </button>
+              {renderJob.status.toUpperCase()}
+              {renderJob.stage ? ` · ${renderJob.stage}` : ''}
+            </span>
+          </div>
+
+          {['queued', 'running', 'complete'].includes(renderJob.status) && (
+            <div className="mt-4 flex flex-col gap-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-neutral-200">
+                  {renderJob.status === 'complete'
+                    ? '100%'
+                    : `${Math.min(100, Math.max(0, Math.round((renderJob.progress ?? 0) * 100)))}%`}
+                </span>
+                {(() => {
+                  const details = (
+                    renderJob.validation_json as {
+                      progress_details?: {
+                        speed?: string;
+                        fps?: number;
+                        eta_seconds?: number;
+                        frames?: number;
+                      };
+                    } | null
+                  )?.progress_details;
+                  if (renderJob.status === 'running' && details) {
+                    const metrics = [
+                      details.speed ? `Speed: ${details.speed}` : null,
+                      details.fps ? `${details.fps} fps` : null,
+                      details.frames ? `Frame ${details.frames}` : null,
+                      details.eta_seconds !== undefined
+                        ? `ETA: ${formatEta(details.eta_seconds)}`
+                        : null,
+                    ].filter(Boolean);
+                    return (
+                      <span className="text-neutral-400">
+                        {metrics.join(' · ')}
+                      </span>
+                    );
+                  }
+                  if (renderJob.status === 'queued') {
+                    return (
+                      <span className="text-neutral-500">
+                        Preparing encoder pipeline...
+                      </span>
+                    );
+                  }
+                  if (renderJob.status === 'complete') {
+                    return (
+                      <span className="flex items-center gap-1 text-emerald-400">
+                        <CheckCircle2 size={13} /> Encoded and validated
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+
+              <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    renderJob.status === 'complete'
+                      ? 'bg-emerald-500'
+                      : 'bg-amber-400'
+                  }`}
+                  style={{
+                    width: `${
+                      renderJob.status === 'complete'
+                        ? 100
+                        : Math.min(
+                            100,
+                            Math.max(
+                              0,
+                              Math.round((renderJob.progress ?? 0) * 100),
+                            ),
+                          )
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
           )}
+
+          {['queued', 'running'].includes(renderJob.status) && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={handleCancelRender}
+                className="rounded-md border border-red-400/30 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/10"
+              >
+                Cancel render
+              </button>
+            </div>
+          )}
+
           {renderJob.error_message && (
-            <p className="mt-1 text-sm text-red-400">
+            <p className="mt-3 rounded border border-red-900/50 bg-red-950/40 p-2.5 text-sm text-red-400">
               {renderJob.error_message}
             </p>
           )}
+
           {renderJob.validation_json &&
             typeof renderJob.validation_json.quality_report === 'object' &&
             renderJob.validation_json.quality_report !== null && (
-              <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3 text-xs text-neutral-400">
+              <div className="mt-4 rounded-md border border-white/10 bg-black/20 p-3 text-xs text-neutral-400">
                 <p className="font-medium text-neutral-200">
                   Export quality check
                 </p>

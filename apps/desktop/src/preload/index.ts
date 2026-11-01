@@ -339,6 +339,12 @@ const reelforgeApi = {
   getStorageInfo(): Promise<StorageInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.storageInfo);
   },
+  selectStorageLocation(locationKey: string): Promise<StorageInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storageLocationSelect, locationKey);
+  },
+  resetStorageLocation(locationKey: string): Promise<StorageInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storageLocationReset, locationKey);
+  },
   clearCache(): Promise<ClearCacheResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.storageCacheClear);
   },

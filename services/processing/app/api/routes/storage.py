@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.config import Settings, get_settings
+from app.core.config import (
+    Settings,
+    get_settings,
+    reset_storage_override,
+    set_storage_override,
+)
 from app.security.auth import require_service_token
 
 router = APIRouter(prefix="/storage", tags=["storage"], dependencies=[Depends(require_service_token)])
@@ -15,6 +21,18 @@ class StorageLocation(BaseModel):
     key: str
     label: str
     path: str
+    is_custom: bool = False
+    free_bytes: int | None = None
+    total_bytes: int | None = None
+
+
+class StorageLocationUpdateRequest(BaseModel):
+    key: str
+    path: str
+
+
+class StorageLocationResetRequest(BaseModel):
+    key: str
 
 
 class StorageInfo(BaseModel):
@@ -29,19 +47,82 @@ class ClearCacheResult(BaseModel):
     message: str
 
 
+VALID_STORAGE_KEYS = {
+    "projects": "Projects",
+    "media": "Imported media",
+    "reference": "Reference videos",
+    "training_input": "Training input reels",
+    "checkpoints": "Training checkpoints",
+    "exports": "Rendered exports",
+    "cache": "Cache",
+}
+
+
+def _build_storage_info(settings: Settings) -> StorageInfo:
+    global_usage = shutil.disk_usage(settings.data_dir)
+    items = [
+        ("projects", "Projects", settings.projects_dir),
+        ("media", "Imported media", settings.media_dir),
+        ("reference", "Reference videos", settings.reference_dir),
+        ("training_input", "Training input reels", settings.training_input_dir),
+        ("checkpoints", "Training checkpoints", settings.checkpoints_dir),
+        ("exports", "Rendered exports", settings.exports_dir),
+        ("cache", "Cache", settings.cache_dir),
+    ]
+    locations = []
+    for key, label, loc_path in items:
+        free_bytes = None
+        total_bytes = None
+        try:
+            target_to_probe = loc_path if loc_path.exists() else loc_path.parent
+            loc_usage = shutil.disk_usage(target_to_probe)
+            free_bytes = loc_usage.free
+            total_bytes = loc_usage.total
+        except Exception:
+            pass
+        locations.append(
+            StorageLocation(
+                key=key,
+                label=label,
+                path=str(loc_path),
+                is_custom=settings.is_custom(key),
+                free_bytes=free_bytes,
+                total_bytes=total_bytes,
+            )
+        )
+    return StorageInfo(locations=locations, free_bytes=global_usage.free, total_bytes=global_usage.total)
+
+
 @router.get("", response_model=StorageInfo)
 def get_storage_info(settings: Settings = Depends(get_settings)) -> StorageInfo:
-    usage = shutil.disk_usage(settings.data_dir)
-    locations = [
-        StorageLocation(key="projects", label="Projects", path=str(settings.projects_dir)),
-        StorageLocation(key="media", label="Imported media", path=str(settings.media_dir)),
-        StorageLocation(key="reference", label="Reference videos", path=str(settings.reference_dir)),
-        StorageLocation(key="training_input", label="Training input reels", path=str(settings.training_input_dir)),
-        StorageLocation(key="checkpoints", label="Training checkpoints", path=str(settings.checkpoints_dir)),
-        StorageLocation(key="exports", label="Rendered exports", path=str(settings.exports_dir)),
-        StorageLocation(key="cache", label="Cache", path=str(settings.cache_dir)),
-    ]
-    return StorageInfo(locations=locations, free_bytes=usage.free, total_bytes=usage.total)
+    return _build_storage_info(settings)
+
+
+@router.post("/location", response_model=StorageInfo)
+def update_storage_location(
+    payload: StorageLocationUpdateRequest,
+    _auth=Depends(require_service_token),
+) -> StorageInfo:
+    if payload.key not in VALID_STORAGE_KEYS:
+        raise HTTPException(status_code=400, detail=f"Invalid storage location key: {payload.key}")
+    target_path = Path(payload.path).resolve()
+    try:
+        target_path.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot create or access directory: {exc}") from exc
+    updated_settings = set_storage_override(payload.key, target_path)
+    return _build_storage_info(updated_settings)
+
+
+@router.post("/location/reset", response_model=StorageInfo)
+def reset_storage_location(
+    payload: StorageLocationResetRequest,
+    _auth=Depends(require_service_token),
+) -> StorageInfo:
+    if payload.key not in VALID_STORAGE_KEYS:
+        raise HTTPException(status_code=400, detail=f"Invalid storage location key: {payload.key}")
+    updated_settings = reset_storage_override(payload.key)
+    return _build_storage_info(updated_settings)
 
 
 @router.post("/cache/clear", response_model=ClearCacheResult)

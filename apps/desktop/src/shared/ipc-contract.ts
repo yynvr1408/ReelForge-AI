@@ -69,6 +69,8 @@ export const IPC_CHANNELS = {
   trainingPacingModelRollback: 'reelforge:training-pacing-model-rollback',
   modelManagerInfo: 'reelforge:model-manager-info',
   storageInfo: 'reelforge:storage-info',
+  storageLocationSelect: 'reelforge:storage-location-select',
+  storageLocationReset: 'reelforge:storage-location-reset',
   storageCacheClear: 'reelforge:storage-cache-clear',
   timelineAdapters: 'reelforge:timeline-adapters',
   timelineAlternatives: 'reelforge:timeline-alternatives',
@@ -326,6 +328,9 @@ export interface StorageLocation {
   key: string;
   label: string;
   path: string;
+  is_custom?: boolean;
+  free_bytes?: number | null;
+  total_bytes?: number | null;
 }
 
 export interface StorageInfo {

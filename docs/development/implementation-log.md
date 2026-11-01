@@ -261,3 +261,21 @@ Reverse-chronological. Each entry: what changed, key files, what was verified.
   - `docs/user-guide/offline-operation.md`
 - **Verification**: Backend processing test suite passed 82 tests; desktop frontend typecheck (`tsc --noEmit`) and linting (`oxlint` & `oxfmt --check`) passed with 0 errors and 0 warnings.
 
+## 2026-11-01 — Real-Time Numeric Render Progress & Configurable Storage Locations
+
+- **Real-Time Render Progress (Master Prompt Sec 16 & Limitation 28)**:
+  - Extended FFmpeg timeline renderer with safe subprocess stream parsing (`-progress pipe:1`).
+  - Implemented non-blocking progress reader thread consuming key-value tokens: `out_time_us`, `out_time_ms`, `frame`, `fps`, and `speed`.
+  - Calculated exact mathematical progress percentage (`out_time_us / (total_duration_seconds * 1_000_000)`), frames encoded, speed multiplier, and estimated time remaining (ETA).
+  - Enhanced `RenderJob` database updates with write throttling (max 4 transactions/sec) to avoid SQLite contention, saving structured `progress_details` into `validation_json`.
+  - Upgraded both `EditorPage` and `RenderQueuePage` with active animated progress bars, live percentage indicators, speed, fps, frame count, ETA, and cancellation controls.
+- **Configurable Multi-Drive Storage Locations (Master Prompt Sec 30 & Limitation 27)**:
+  - Enabled persistent user configuration of all managed storage paths (`projects`, `media`, `reference`, `training_input`, `checkpoints`, `exports`, and `cache`) across multiple internal and external drives.
+  - Implemented `POST /storage/location` and `POST /storage/location/reset` in `services/processing/app/api/routes/storage.py` backed by `storage_settings.json` under `data_dir` and environment overrides.
+  - Added native folder dialog integration in Electron main process (`storageLocationSelect`) and preload bridge.
+  - Upgraded `SettingsPage` to display custom location badges, per-location drive free/total space, "Change" directory action, and "Reset to default" action.
+- **Verification**:
+  - Processing test suite expanded to 84 passing tests (`test_render_progress_dataclass_and_time_parser`, `test_storage_location_update_and_reset`).
+  - Desktop TypeScript typecheck (`tsc --noEmit`) passed with 0 errors.
+  - Desktop linting (`oxlint` & `oxfmt --check`) passed with 0 errors and 0 warnings.
+

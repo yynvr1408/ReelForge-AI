@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -52,14 +53,42 @@ def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_p
             return
         job.status = "running"
         job.stage = "encoding"
+        job.progress = 0.0
         session.commit()
 
+    last_update_time = [0.0]
+    last_percent = [-1.0]
+
     def on_progress(progress: RenderProgress):
-        with session_scope() as session:
-            job = session.get(RenderJob, job_id)
-            if job is not None:
-                job.stage = progress.stage
-                session.commit()
+        now = time.monotonic()
+        pct = progress.percent if progress.percent is not None else 0.0
+        is_stage_change = progress.stage != "encoding"
+        time_elapsed = (now - last_update_time[0]) >= 0.25
+        percent_delta = abs(pct - last_percent[0]) >= 0.01
+
+        if is_stage_change or (time_elapsed and percent_delta) or pct >= 1.0:
+            last_update_time[0] = now
+            last_percent[0] = pct
+            with session_scope() as session:
+                job = session.get(RenderJob, job_id)
+                if job is not None:
+                    job.stage = progress.stage
+                    if progress.percent is not None:
+                        job.progress = round(progress.percent, 4)
+                    details = {}
+                    if progress.speed:
+                        details["speed"] = progress.speed
+                    if progress.fps is not None:
+                        details["fps"] = round(progress.fps, 1)
+                    if progress.frames is not None:
+                        details["frames"] = progress.frames
+                    if progress.eta_seconds is not None:
+                        details["eta_seconds"] = round(progress.eta_seconds, 1)
+                    if details:
+                        existing = dict(job.validation_json or {})
+                        existing["progress_details"] = details
+                        job.validation_json = existing
+                    session.commit()
 
     try:
         if handle.cancelled():
@@ -73,6 +102,12 @@ def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_p
             cancelled=handle.cancelled,
             media_has_audio=media_has_audio,
         )
+        with session_scope() as session:
+            job = session.get(RenderJob, job_id)
+            if job is not None:
+                job.stage = "validating_output"
+                job.progress = 0.99
+                session.commit()
         validation = validate_render_output(
             settings.ffprobe_path, output_path, timeline.total_duration_seconds, timeline.export_settings
         )
@@ -81,7 +116,8 @@ def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_p
             job = session.get(RenderJob, job_id)
             if job is not None:
                 job.status = "complete" if validation.is_valid else "failed"
-                job.stage = "complete"
+                job.stage = "complete" if validation.is_valid else "validation_failed"
+                job.progress = 1.0 if validation.is_valid else job.progress
                 job.output_path = str(output_path)
                 job.validation_json = {
                     "is_valid": validation.is_valid,
@@ -104,6 +140,7 @@ def _run_render_job(job_id: str, settings: Settings, timeline: Timeline, media_p
             job = session.get(RenderJob, job_id)
             if job is not None:
                 job.status = "failed"
+                job.stage = "failed"
                 job.error_message = str(exc)[:2000] or type(exc).__name__
                 session.commit()
 
