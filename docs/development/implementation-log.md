@@ -1,5 +1,12 @@
 # Implementation log
 
+## 2026-11-01 continuation — Audio controls, color presets, and expanded export settings
+
+- **Expanded Export Presets & Video Controls**: Added five standard export presets: 9:16 Vertical HD (1080×1920), 9:16 Vertical Fast (720×1280), 4:5 Portrait Feed (1080×1350 for Instagram Feed), 16:9 Landscape HD (1920×1080), and 1:1 Square Feed (1080×1080). Added user-selectable frame rate (24 cinematic, 30 standard, 60 smooth) and quality (CRF 18 production, 20 balanced, 24 compact). Export setting changes dynamically update timeline configuration, preview aspect ratio, and render jobs without requiring full timeline re-generation.
+- **Creative Color Grading Presets & Global Consistency**: Added 1-click creative color presets (Neutral, Golden Hour, Cinematic Teal, Vivid Pop, Vintage Film, Dramatic B&W) and a "Grade to all" button to apply any clip's color grade across all timeline clips. Preserves source pixels; non-destructive color adjustment via FFmpeg colorbalance/eq filter graphs.
+- **Per-Clip Audio Gain, Mute & Fades**: Added per-clip volume gain slider (-24 dB to +12 dB), 1-click mute toggle (<= -40 dB mapped to volume=0.0000), and explicit audio fade-in/fade-out sliders (0 to 2.0s) mapped directly into FFmpeg `volume` and `afade` filter graphs.
+- **Test Coverage**: Added unit tests in `test_timeline_schema.py` verifying audio volume gain factor calculations, mute threshold zeroing, and `afade` filter chain generation. 86 processing tests pass; desktop TypeScript typecheck and oxlint/oxfmt checks pass with 0 warnings and 0 errors.
+
 ## 2026-10-29 continuation
 
 - Added persisted reference-analysis jobs with `queued/running/complete/failed/cancelled` states, stage reporting, cancel IPC/UI, cooperative checks during visual sampling and audio decoding, scene-detector callback checks, and recovery of interrupted jobs after service restart. Schema v3 creates the job table with a pre-migration database backup. Tests cover successful analysis, cancellation, restart recovery, v2 backup, and cancellation checks within the analyzers.

@@ -17,6 +17,10 @@ import {
   CheckCircle2,
   Music,
   RefreshCw,
+  Volume2,
+  VolumeX,
+  Copy,
+  Sparkles,
 } from 'lucide-react';
 
 import { useAppStore } from '../../stores/useAppStore';
@@ -34,17 +38,95 @@ import type {
 } from '../../../shared/ipc-contract';
 
 const EXPORT_PRESETS = {
-  vertical: { width: 1080, height: 1920 },
-  horizontal: { width: 1920, height: 1080 },
-  square: { width: 1080, height: 1080 },
+  vertical_1080: {
+    label: '9:16 Vertical HD (1080 × 1920)',
+    width: 1080,
+    height: 1920,
+  },
+  vertical_720: {
+    label: '9:16 Vertical Fast (720 × 1280)',
+    width: 720,
+    height: 1280,
+  },
+  portrait_4_5: {
+    label: '4:5 Portrait Feed (1080 × 1350)',
+    width: 1080,
+    height: 1350,
+  },
+  horizontal: {
+    label: '16:9 Landscape HD (1920 × 1080)',
+    width: 1920,
+    height: 1080,
+  },
+  square: {
+    label: '1:1 Square Feed (1080 × 1080)',
+    width: 1080,
+    height: 1080,
+  },
 } as const;
 
 type ExportPreset = keyof typeof EXPORT_PRESETS;
 
 function presetForDimensions(width?: number, height?: number): ExportPreset {
-  if (width && height && Math.abs(width - height) <= 2) return 'square';
-  return width && height && width > height ? 'horizontal' : 'vertical';
+  if (!width || !height) return 'vertical_1080';
+  if (Math.abs(width - height) <= 2) return 'square';
+  if (width === 1080 && height === 1350) return 'portrait_4_5';
+  if (width === 720 && height === 1280) return 'vertical_720';
+  if (width > height) return 'horizontal';
+  return 'vertical_1080';
 }
+
+const COLOR_PRESETS = [
+  {
+    name: 'Neutral',
+    values: { exposure: 0, contrast: 0, saturation: 0, temperature: 0 },
+  },
+  {
+    name: 'Golden Hour',
+    values: {
+      exposure: 0.08,
+      contrast: 0.12,
+      saturation: 0.25,
+      temperature: 0.35,
+    },
+  },
+  {
+    name: 'Cinematic Teal',
+    values: {
+      exposure: -0.05,
+      contrast: 0.2,
+      saturation: -0.1,
+      temperature: -0.25,
+    },
+  },
+  {
+    name: 'Vivid Pop',
+    values: {
+      exposure: 0.05,
+      contrast: 0.25,
+      saturation: 0.45,
+      temperature: 0.05,
+    },
+  },
+  {
+    name: 'Vintage Film',
+    values: {
+      exposure: 0.1,
+      contrast: -0.15,
+      saturation: -0.2,
+      temperature: 0.2,
+    },
+  },
+  {
+    name: 'Dramatic B&W',
+    values: {
+      exposure: 0.0,
+      contrast: 0.35,
+      saturation: -1.0,
+      temperature: 0.0,
+    },
+  },
+] as const;
 
 type EditableClip = {
   id: string;
@@ -63,6 +145,11 @@ type EditableClip = {
     contrast: number;
     saturation: number;
     temperature: number;
+  };
+  audio?: {
+    gain_db: number;
+    fade_in_seconds: number;
+    fade_out_seconds: number;
   };
   selection_reason?: string | null;
   quality_score?: number | null;
@@ -109,7 +196,10 @@ export function EditorPage() {
   const [profiles, setProfiles] = useState<StyleProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [targetDuration, setTargetDuration] = useState<string>('');
-  const [exportPreset, setExportPreset] = useState<ExportPreset>('vertical');
+  const [exportPreset, setExportPreset] =
+    useState<ExportPreset>('vertical_1080');
+  const [exportFps, setExportFps] = useState<number>(30);
+  const [exportCrf, setExportCrf] = useState<number>(20);
   const [editingBrief, setEditingBrief] = useState('');
   const [adapters, setAdapters] = useState<LLMAdapterInfo[]>([]);
   const [selectedAdapterId, setSelectedAdapterId] =
@@ -173,10 +263,14 @@ export function EditorPage() {
           validation: { is_valid: true, issues: [] },
         });
       const settings = p.timeline_json?.export_settings as
-        | { width?: number; height?: number }
+        | { width?: number; height?: number; frame_rate?: number; crf?: number }
         | undefined;
-      if (settings)
+      if (settings) {
         setExportPreset(presetForDimensions(settings.width, settings.height));
+        if (typeof settings.frame_rate === 'number')
+          setExportFps(settings.frame_rate);
+        if (typeof settings.crf === 'number') setExportCrf(settings.crf);
+      }
     });
     void window.reelforge
       .listProjectVersions(activeProjectId)
@@ -255,12 +349,13 @@ export function EditorPage() {
         targetDuration ? Number(targetDuration) : undefined,
         editingBrief || undefined,
         {
-          ...EXPORT_PRESETS[exportPreset],
-          frame_rate: 30,
+          width: EXPORT_PRESETS[exportPreset].width,
+          height: EXPORT_PRESETS[exportPreset].height,
+          frame_rate: exportFps,
           video_codec: 'libx264',
           audio_codec: 'aac',
           container: 'mp4',
-          crf: 20,
+          crf: exportCrf,
         },
         selectedAdapterId || undefined,
       );
@@ -455,10 +550,19 @@ export function EditorPage() {
           validation: { is_valid: true, issues: [] },
         });
         const settings = restored.timeline_json.export_settings as
-          | { width?: number; height?: number }
+          | {
+              width?: number;
+              height?: number;
+              frame_rate?: number;
+              crf?: number;
+            }
           | undefined;
-        if (settings)
+        if (settings) {
           setExportPreset(presetForDimensions(settings.width, settings.height));
+          if (typeof settings.frame_rate === 'number')
+            setExportFps(settings.frame_rate);
+          if (typeof settings.crf === 'number') setExportCrf(settings.crf);
+        }
       } else {
         setGenerated(null);
       }
@@ -750,6 +854,93 @@ export function EditorPage() {
     commitTimeline(timeline);
   }
 
+  function updateExportSettings(
+    preset: ExportPreset,
+    fps: number,
+    crf: number,
+  ) {
+    setExportPreset(preset);
+    setExportFps(fps);
+    setExportCrf(crf);
+    if (generated) {
+      const timeline = structuredClone(generated.timeline) as EditableTimeline;
+      timeline.export_settings = {
+        width: EXPORT_PRESETS[preset].width,
+        height: EXPORT_PRESETS[preset].height,
+        frame_rate: fps,
+        video_codec: 'libx264',
+        audio_codec: 'aac',
+        container: 'mp4',
+        crf,
+      };
+      commitTimeline(timeline);
+    }
+  }
+
+  function applyColorPresetToClip(
+    clipId: string,
+    presetValues: {
+      exposure: number;
+      contrast: number;
+      saturation: number;
+      temperature: number;
+    },
+  ) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    const clip = timeline?.tracks
+      .find((track) => track.kind === 'video')
+      ?.clips.find((item) => item.id === clipId);
+    if (!timeline || !clip) return;
+    clip.color = { ...presetValues };
+    commitTimeline(timeline);
+  }
+
+  function applyColorToAllClips(color: NonNullable<EditableClip['color']>) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    const track = timeline?.tracks.find((t) => t.kind === 'video');
+    if (!timeline || !track) return;
+    for (const clip of track.clips) {
+      clip.color = { ...color };
+    }
+    commitTimeline(timeline);
+    setFeedbackNotice('Applied color grade to all timeline clips.');
+  }
+
+  function changeClipAudio(
+    clipId: string,
+    field: 'gain_db' | 'fade_in_seconds' | 'fade_out_seconds',
+    value: number,
+  ) {
+    if (!Number.isFinite(value)) return;
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    const clip = timeline?.tracks
+      .find((track) => track.kind === 'video')
+      ?.clips.find((item) => item.id === clipId);
+    if (!timeline || !clip) return;
+    clip.audio ??= { gain_db: 0, fade_in_seconds: 0, fade_out_seconds: 0 };
+    clip.audio[field] = value;
+    commitTimeline(timeline);
+  }
+
+  function toggleClipMute(clipId: string) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    const clip = timeline?.tracks
+      .find((track) => track.kind === 'video')
+      ?.clips.find((item) => item.id === clipId);
+    if (!timeline || !clip) return;
+    clip.audio ??= { gain_db: 0, fade_in_seconds: 0, fade_out_seconds: 0 };
+    clip.audio.gain_db = clip.audio.gain_db <= -40 ? 0 : -60;
+    commitTimeline(timeline);
+  }
+
   function addCaption() {
     const timeline = structuredClone(generated?.timeline) as
       | EditableTimeline
@@ -955,13 +1146,63 @@ export function EditorPage() {
             <select
               value={exportPreset}
               onChange={(event) =>
-                setExportPreset(event.target.value as ExportPreset)
+                updateExportSettings(
+                  event.target.value as ExportPreset,
+                  exportFps,
+                  exportCrf,
+                )
               }
               className="rounded-md border border-white/10 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100"
             >
-              <option value="vertical">Vertical · 1080 × 1920</option>
-              <option value="horizontal">Horizontal · 1920 × 1080</option>
-              <option value="square">Square · 1080 × 1080</option>
+              <option value="vertical_1080">
+                9:16 Vertical HD (1080 × 1920)
+              </option>
+              <option value="vertical_720">
+                9:16 Vertical Fast (720 × 1280)
+              </option>
+              <option value="portrait_4_5">
+                4:5 Portrait Feed (1080 × 1350)
+              </option>
+              <option value="horizontal">
+                16:9 Landscape HD (1920 × 1080)
+              </option>
+              <option value="square">1:1 Square Feed (1080 × 1080)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-400">
+            Frame rate
+            <select
+              value={exportFps}
+              onChange={(event) =>
+                updateExportSettings(
+                  exportPreset,
+                  Number(event.target.value),
+                  exportCrf,
+                )
+              }
+              className="rounded-md border border-white/10 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100"
+            >
+              <option value={24}>24 fps (Cinematic)</option>
+              <option value={30}>30 fps (Standard)</option>
+              <option value={60}>60 fps (Smooth)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-400">
+            Quality
+            <select
+              value={exportCrf}
+              onChange={(event) =>
+                updateExportSettings(
+                  exportPreset,
+                  exportFps,
+                  Number(event.target.value),
+                )
+              }
+              className="rounded-md border border-white/10 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100"
+            >
+              <option value={18}>Production (CRF 18)</option>
+              <option value={20}>Balanced (CRF 20)</option>
+              <option value={24}>Compact (CRF 24)</option>
             </select>
           </label>
           {adapters.length > 0 && (
@@ -1346,6 +1587,24 @@ export function EditorPage() {
                     >
                       <Palette size={13} /> Save grade
                     </button>
+                    <button
+                      type="button"
+                      title="Apply this clip's color grade to all clips in the timeline"
+                      aria-label={`Apply color grade to all clips from clip ${i + 1}`}
+                      onClick={() =>
+                        applyColorToAllClips(
+                          clip.color ?? {
+                            exposure: 0,
+                            contrast: 0,
+                            saturation: 0,
+                            temperature: 0,
+                          },
+                        )
+                      }
+                      className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+                    >
+                      <Copy size={13} /> Grade to all
+                    </button>
                   </span>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
@@ -1488,6 +1747,23 @@ export function EditorPage() {
                     <Trash2 size={14} />
                   </button>
                 </div>
+                <div className="flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-2 text-[11px]">
+                  <span className="flex items-center gap-1 text-neutral-500">
+                    <Sparkles size={11} /> Presets:
+                  </span>
+                  {COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() =>
+                        applyColorPresetToClip(clip.id, preset.values)
+                      }
+                      className="rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-neutral-300 hover:border-orange-500/50 hover:text-white"
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-white/5 pt-2 sm:grid-cols-3">
                   {(
                     [
@@ -1537,6 +1813,100 @@ export function EditorPage() {
                       />
                     </label>
                   ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-4 border-t border-white/5 pt-2 text-[11px]">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleClipMute(clip.id)}
+                      className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                        (clip.audio?.gain_db ?? 0) <= -40
+                          ? 'border border-red-500/40 bg-red-950/40 text-red-400'
+                          : 'border border-white/10 bg-neutral-900 text-neutral-300 hover:bg-white/5'
+                      }`}
+                      title={
+                        (clip.audio?.gain_db ?? 0) <= -40
+                          ? 'Unmute clip'
+                          : 'Mute clip'
+                      }
+                    >
+                      {(clip.audio?.gain_db ?? 0) <= -40 ? (
+                        <>
+                          <VolumeX size={13} /> Muted
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 size={13} /> Audio
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 text-neutral-500">
+                    <span>
+                      Gain:{' '}
+                      {(clip.audio?.gain_db ?? 0) <= -40
+                        ? 'Muted'
+                        : `${(clip.audio?.gain_db ?? 0) >= 0 ? '+' : ''}${(clip.audio?.gain_db ?? 0).toFixed(1)} dB`}
+                    </span>
+                    <input
+                      type="range"
+                      min="-24"
+                      max="12"
+                      step="0.5"
+                      disabled={(clip.audio?.gain_db ?? 0) <= -40}
+                      value={
+                        (clip.audio?.gain_db ?? 0) <= -40
+                          ? -24
+                          : (clip.audio?.gain_db ?? 0)
+                      }
+                      onChange={(event) =>
+                        changeClipAudio(
+                          clip.id,
+                          'gain_db',
+                          Number(event.target.value),
+                        )
+                      }
+                      className="w-24 accent-orange-500 disabled:opacity-30"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 text-neutral-500">
+                    <span>Fade in:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={clip.audio?.fade_in_seconds ?? 0}
+                      onChange={(event) =>
+                        changeClipAudio(
+                          clip.id,
+                          'fade_in_seconds',
+                          Number(event.target.value),
+                        )
+                      }
+                      className="w-16 rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-xs text-neutral-200"
+                    />
+                    <span>s</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 text-neutral-500">
+                    <span>Fade out:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={clip.audio?.fade_out_seconds ?? 0}
+                      onChange={(event) =>
+                        changeClipAudio(
+                          clip.id,
+                          'fade_out_seconds',
+                          Number(event.target.value),
+                        )
+                      }
+                      className="w-16 rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-xs text-neutral-200"
+                    />
+                    <span>s</span>
+                  </label>
                 </div>
               </li>
             ))}

@@ -244,3 +244,29 @@ def test_renderer_chains_atempo_for_high_speed(tmp_path):
         {"media-1": True},
     )
     assert "atempo=2.000000,atempo=2.000000" in graph
+
+
+def test_renderer_supports_audio_gain_mute_and_fades(tmp_path):
+    from app.timeline.schema import AudioAdjustment
+
+    clip_muted = _clip(
+        id="c-mute",
+        source_out_seconds=3.0,
+        audio=AudioAdjustment(gain_db=-60.0),
+    )
+    clip_gain_and_fades = _clip(
+        id="c-fades",
+        source_out_seconds=4.0,
+        audio=AudioAdjustment(gain_db=6.0, fade_in_seconds=0.5, fade_out_seconds=1.0),
+    )
+    timeline = Timeline(tracks=[Track(id="v", kind="video", clips=[clip_muted, clip_gain_and_fades])])
+    _inputs, graph, _video, _audio = build_filter_graph(
+        timeline,
+        {"media-1": tmp_path / "media1.mp4"},
+        {"media-1": True},
+    )
+    assert "volume=0.0000" in graph
+    assert "volume=1.9953" in graph
+    assert "afade=t=in:st=0:d=0.500" in graph
+    assert "afade=t=out:st=3.000:d=1.000" in graph
+

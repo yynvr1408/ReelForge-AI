@@ -153,12 +153,22 @@ def build_filter_graph(
                 f"asetpts=PTS-STARTPTS,aformat=sample_fmts=fltp:channel_layouts=stereo[{a_label}]"
             )
         else:
+            gain_factor = 0.0 if audio.gain_db <= -40.0 else (10 ** (audio.gain_db / 20))
+            fade_parts = []
+            if audio.fade_in_seconds > 0:
+                fade_parts.append(f"afade=t=in:st=0:d={audio.fade_in_seconds:.3f}")
+            elif clip.transition_in == "fade" and clip.transition_duration_seconds > 0:
+                fade_parts.append(f"afade=t=in:st=0:d={clip.transition_duration_seconds:.3f}")
+            if audio.fade_out_seconds > 0:
+                fade_out_st = max(0.0, clip.duration_seconds - audio.fade_out_seconds)
+                fade_parts.append(f"afade=t=out:st={fade_out_st:.3f}:d={audio.fade_out_seconds:.3f}")
+            afade_chain = f",{','.join(fade_parts)}" if fade_parts else ""
             audio_filter = (
                 f"[{index}:a]atrim=start={clip.source_in_seconds:.3f}:end={clip.source_out_seconds:.3f},"
                 f"asetpts=PTS-STARTPTS,{_atempo_chain(clip.playback_speed)},"
-                f"volume={10 ** (audio.gain_db / 20):.4f},aresample=48000,"
+                f"volume={gain_factor:.4f},aresample=48000,"
                 f"aformat=sample_fmts=fltp:channel_layouts=stereo"
-                f"{f',afade=t=in:st=0:d={clip.transition_duration_seconds:.3f}' if clip.transition_in == 'fade' and clip.transition_duration_seconds > 0 else ''}"
+                f"{afade_chain}"
                 f"[{a_label}]"
             )
         filter_parts.append(audio_filter)
