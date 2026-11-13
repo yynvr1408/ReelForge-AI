@@ -1,0 +1,28 @@
+# ReelForge AI — Version 1.0.0
+
+[![Release](https://img.shields.io/badge/release-v1.0.0-orange.svg)](../../CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)](../../releases/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](../../LICENSE)
+[![Architecture](https://img.shields.io/badge/architecture-Offline--First%20%7C%20Non--Generative-brightgreen.svg)](../../FEATURES.md)
+
+**ReelForge AI v1.0.0** is the initial production release of the offline-first desktop video editor with reference-video style learning. Built with Electron, React, TypeScript, a local Python processing engine, and bundled FFmpeg.
+
+---
+
+## v1.0.0 Release Highlights
+
+* **Original-Pixel Editing**: Strictly non-generative. Preserves authentic camera footage, colors, and textures without synthesizing deepfakes, AI faces, or artificial hallucinations.
+* **Reference Style Learning**: Automatically extracts scene cuts, shot duration cadence, and rhythm from viral short-form reels to guide your timeline edits.
+* **Local Pacing ML Intelligence**: Trains an offline CPU logistic regression model on your footage and editing feedback to personalize cut timing.
+* **Multi-Track Timeline**: Features beat-snapping, dialogue auto-captions, creative color presets, per-clip audio control (-24 dB to +12 dB), and 50-step undo/redo.
+* **Simplified Folder Navigation**: Direct Windows File Explorer shortcuts, disk capacity meters, and native OS drag-and-drop.
+* **Updates & Rollback**: Clean in-app update checks, 1-click version rollback, and offline installer management.
+
+For full feature details, see [FEATURES.md](../../FEATURES.md).  
+For the latest version history and release notes, see [CHANGELOG.md](../../CHANGELOG.md).
+
+---
+
+## Included Artifacts
+- **Windows Squirrel Installer**: `releases/ReelForge AI-1.0.0 Setup.exe`
+- **Release Manifest**: `releases/README.md`

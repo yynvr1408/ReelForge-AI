@@ -1,73 +1,95 @@
 # ReelForge AI
 
-AI-assisted desktop video editor with reference-video style learning. Electron + React + TypeScript frontend, local Python/FastAPI processing service, FFmpeg rendering, SQLite persistence.
+[![Release](https://img.shields.io/badge/release-v1.0.0-orange.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Windows%20x64-blue.svg)](releases/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Architecture](https://img.shields.io/badge/architecture-Offline--First%20%7C%20Non--Generative-brightgreen.svg)](FEATURES.md)
 
-Full product specification: [ReelForge_AI_Claude_Code_Master_Prompt.md](ReelForge_AI_Claude_Code_Master_Prompt.md).
+**ReelForge AI** is an offline-first desktop video editor with reference-video style learning. Built with Electron, React, TypeScript, a local Python processing engine, and bundled FFmpeg.
 
-## Current status
+---
 
-A working offline vertical slice is implemented: create a project, import a reference video, detect scene cuts, build a style profile, import source footage, generate a rule-based timeline, render it with FFmpeg, and validate the output. The processing tests pass, but the full API workflow must be rerun outside the current restricted Windows sandbox, where the TestClient cannot create its asyncio socket pair. See [docs/development/implementation-roadmap.md](docs/development/implementation-roadmap.md) for what's built versus planned, and [docs/development/known-limitations.md](docs/development/known-limitations.md) for current verification gaps.
+## Highlights
 
-## Repository layout
+* **Original-Pixel Editing**: Strictly non-generative. Preserves authentic camera footage, colors, and textures without synthesizing deepfakes, AI faces, or artificial hallucinations.
+* **Reference Style Learning**: Automatically extracts scene cuts, shot duration cadence, and rhythm from viral short-form reels to guide your timeline edits.
+* **Local Pacing ML Intelligence**: Trains an offline CPU logistic regression model on your footage and editing feedback to personalize cut timing.
+* **Multi-Track Timeline**: Features beat-snapping, dialogue auto-captions, creative color presets, per-clip audio control (-24 dB to +12 dB), and 50-step undo/redo.
+* **Simplified Folder Navigation**: Direct Windows File Explorer shortcuts, disk capacity meters, and native OS drag-and-drop.
+* **Updates & Rollback**: Clean in-app update checks, 1-click version rollback, and offline installer management.
+
+For full feature details, see [FEATURES.md](FEATURES.md).  
+For the latest version history and release notes, see [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## Installation & Releases
+
+Pre-built Windows installers are available in the local [`releases/`](releases/) directory and on [GitHub Releases](https://github.com/yynvr1408/reelforge-ai-releases/releases):
+
+- **v1.0.0 Installer**: `releases/ReelForge AI-1.0.0 Setup.exe`
+
+---
+
+## Repository Layout
 
 ```text
 apps/desktop/        Electron + React + TypeScript app (main, preload, renderer)
-services/processing/ Python FastAPI processing service (media analysis, timeline, rendering)
-packages/             Shared type/schema packages (see packages/shared-types/README.md)
-docs/                 Architecture, development, testing, training, user-guide docs
-scripts/              Dev/validation/packaging scripts
-tests/                Cross-cutting fixtures and integration tests
+services/processing/ Python FastAPI processing engine (media analysis, timeline, rendering)
+releases/            Local offline Windows installer executables (*.exe)
+docs/                Architecture, user guide, releases, and readme snapshots
+CHANGELOG.md         Version history and release notes
+FEATURES.md          Complete product features documentation
 ```
 
-## Prerequisites
+---
 
+## Development Setup
+
+### Prerequisites
 - Node.js 20+ and npm
-- Python 3.12 (3.13/3.14 are too new for some ML wheels used in later phases — stick to 3.12 for the processing service venv)
+- Python 3.12 (in a virtual environment)
 - Git
 
-FFmpeg/FFprobe are **not** required system-wide — they're bundled via the `ffmpeg-ffprobe-static` npm package and resolved automatically.
+FFmpeg and FFprobe are bundled automatically via `ffmpeg-ffprobe-static`.
 
-## Setup
-
-See [docs/development/setup.md](docs/development/setup.md) for full instructions. Quick version:
-
+### Running in Development
 ```bash
-# Desktop app
+# 1. Install desktop dependencies
 cd apps/desktop
 npm install
 
-# Processing service
+# 2. Setup processing service venv
 cd ../../services/processing
-py -3.12 -m venv .venv
-./.venv/Scripts/pip install -e ".[dev]"
-```
+python -m venv .venv
+.\.venv\Scripts\pip install -e ".[dev,build]"
 
-## Running in development
-
-```bash
-cd apps/desktop
+# 3. Launch application
+cd ../../apps/desktop
 npm run start
 ```
 
-This launches Electron, which spawns the Python processing service as a child process automatically (binding to loopback only, with a per-launch random auth token). No separate terminal is needed for the backend.
-
-## Testing
-
+### Verification & Testing
 ```bash
-# Backend (unit + integration, including a full render using synthetic FFmpeg test clips)
+# Backend test suite (93 unit & integration tests)
 cd services/processing
-./.venv/Scripts/python -m pytest
+.\.venv\Scripts\python -m pytest
 
-# Frontend typecheck + lint
+# Frontend typechecking & linting
 cd apps/desktop
 npm run typecheck
 npm run lint
 ```
 
+### Building Releases
+```bash
+# Build standalone Windows installer package (.exe)
+cd apps/desktop
+npm run make
+```
+
+---
+
 ## Security
 
-See [SECURITY.md](SECURITY.md). Electron is configured with `contextIsolation`, `sandbox`, and `nodeIntegration: false`; the renderer reaches the processing service only through a fixed, typed IPC allowlist — never direct HTTP, Node, or shell access.
-
-## AI editing scope
-
-The intended AI features analyze user-provided footage and suggest editable timelines, pacing, and audio choices. They do not generate frames or alter a person's face, body, clothing, or scene. Reframing uses original pixels or letterboxing; suggested edits remain reviewable before rendering.
+See [SECURITY.md](SECURITY.md). Electron is locked down with `contextIsolation: true`, `sandbox: true`, and `nodeIntegration: false`. The renderer communicates exclusively via a strict typed IPC allowlist.
