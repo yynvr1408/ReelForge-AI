@@ -36,23 +36,23 @@ const shortBuildTempDir =
  * docs/releases/release-process.md.
  */
 function buildProcessingServiceExecutable(): void {
-  const pyinstaller = path.join(
+  const pythonExe = path.join(
     processingDir,
     '.venv',
     'Scripts',
-    'pyinstaller.exe',
+    'python.exe',
   );
-  if (!existsSync(pyinstaller)) {
+  if (!existsSync(pythonExe)) {
     throw new Error(
-      `PyInstaller not found at ${pyinstaller}. Run: cd services/processing && ./.venv/Scripts/pip install -e ".[build]"`,
+      `Python not found at ${pythonExe}. Run: cd services/processing && ./.venv/Scripts/pip install -e ".[build]"`,
     );
   }
   console.log(
     '[forge] Building processing service executable with PyInstaller...',
   );
   execFileSync(
-    pyinstaller,
-    ['reelforge-processing.spec', '--noconfirm', '--clean'],
+    pythonExe,
+    ['-m', 'PyInstaller', 'reelforge-processing.spec', '--noconfirm', '--clean'],
     {
       cwd: processingDir,
       stdio: 'inherit',
