@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from app.database.models import FeedbackEntry
-from app.training.dataset import build_dataset_manifest
+from app.training.dataset import (
+    build_dataset_manifest,
+    generate_dataset_from_staged_reels,
+    seed_sample_dataset,
+)
 
 
 def test_empty_dataset_manifest(route_session):
@@ -38,3 +42,31 @@ def test_dataset_manifest_threshold_and_balance(route_session):
     assert manifest.is_balanced is True
     assert manifest.validation_status == "ready"
     assert len(manifest.samples) == 8
+
+
+def test_seed_sample_dataset(route_session):
+    seeded = seed_sample_dataset(route_session, count=12)
+    assert seeded == 12
+
+    manifest = build_dataset_manifest(route_session)
+    assert manifest.total_samples == 12
+    assert manifest.meets_training_threshold is True
+    assert manifest.is_balanced is True
+    assert manifest.validation_status == "ready"
+    assert manifest.class_distribution["too_fast"] == 6
+    assert manifest.class_distribution["too_slow"] == 6
+
+
+def test_generate_dataset_from_staged_reels(route_session):
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    # Tests generation and augmentation even when input dir has no reels
+    generated = generate_dataset_from_staged_reels(route_session, settings)
+    assert generated >= 8
+
+    manifest = build_dataset_manifest(route_session)
+    assert manifest.meets_training_threshold is True
+    assert manifest.is_balanced is True
+    assert manifest.validation_status == "ready"
+

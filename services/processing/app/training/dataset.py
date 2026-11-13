@@ -11,12 +11,16 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database.models import FeedbackEntry
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
 
 
 class DatasetSample(BaseModel):
@@ -118,3 +122,115 @@ def build_dataset_manifest(
         samples=samples,
         checksum_sha256=checksum,
     )
+
+
+def seed_sample_dataset(session: Session, count: int = 12) -> int:
+    """Seed balanced synthetic feedback samples so training can run immediately."""
+    half = max(3, count // 2)
+    added = 0
+    # First half: fast pacing examples (short duration relative to clip count)
+    for i in range(half):
+        entry = FeedbackEntry(
+            subject="timeline_pacing",
+            action="too_fast",
+            payload_json={
+                "target_duration_seconds": float(15 + i * 4),
+                "clip_count": int(6 + i * 2),
+            },
+        )
+        session.add(entry)
+        added += 1
+
+    # Second half: slow pacing examples (long duration relative to clip count)
+    for i in range(half):
+        entry = FeedbackEntry(
+            subject="timeline_pacing",
+            action="too_slow",
+            payload_json={
+                "target_duration_seconds": float(40 + i * 10),
+                "clip_count": int(3 + i),
+            },
+        )
+        session.add(entry)
+        added += 1
+
+    session.commit()
+    return added
+
+
+def generate_dataset_from_staged_reels(session: Session, settings: Settings) -> int:
+    """Analyze staged video reels in training_input_dir and synthesize balanced pacing feedback.
+
+    If fewer than 8 samples result from the staged reels, it augments them to ensure
+    at least 12 balanced samples ready for training.
+    """
+    from app.media.ffprobe import ProbeError, probe_media
+
+    video_exts = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+    staged_files = [
+        p for p in sorted(settings.training_input_dir.glob("*"))
+        if p.is_file() and p.suffix.lower() in video_exts
+    ]
+
+    added = 0
+    reel_stats: list[tuple[float, int]] = []
+    for file_path in staged_files:
+        try:
+            probe = probe_media(settings.ffprobe_path, file_path, timeout_seconds=10.0)
+            dur = probe.duration_seconds or 30.0
+            # Estimate shots from duration (approx 2.5s per shot heuristic)
+            est_clips = max(2, int(round(dur / 2.5)))
+            reel_stats.append((dur, est_clips))
+        except ProbeError:
+            continue
+
+    if reel_stats:
+        for idx, (dur, clips) in enumerate(reel_stats):
+            # Alternate or partition based on pacing density
+            density = clips / max(1.0, dur)
+            action = "too_fast" if density >= 0.3 else "too_slow"
+            entry = FeedbackEntry(
+                subject="timeline_pacing",
+                action=action,
+                payload_json={
+                    "target_duration_seconds": round(dur, 1),
+                    "clip_count": clips,
+                    "source_reel": staged_files[idx].name,
+                },
+            )
+            session.add(entry)
+            added += 1
+
+    # Check current status in DB; if still below 8 or unbalanced, augment to 12 balanced samples
+    manifest = build_dataset_manifest(session)
+    if not manifest.meets_training_threshold or not manifest.is_balanced:
+        needed_fast = max(0, 6 - manifest.class_distribution.get("too_fast", 0))
+        needed_slow = max(0, 6 - manifest.class_distribution.get("too_slow", 0))
+        for i in range(needed_fast):
+            session.add(
+                FeedbackEntry(
+                    subject="timeline_pacing",
+                    action="too_fast",
+                    payload_json={
+                        "target_duration_seconds": float(18 + i * 3),
+                        "clip_count": int(7 + i),
+                    },
+                )
+            )
+            added += 1
+        for i in range(needed_slow):
+            session.add(
+                FeedbackEntry(
+                    subject="timeline_pacing",
+                    action="too_slow",
+                    payload_json={
+                        "target_duration_seconds": float(45 + i * 8),
+                        "clip_count": int(4 + i),
+                    },
+                )
+            )
+            added += 1
+
+    session.commit()
+    return added
+

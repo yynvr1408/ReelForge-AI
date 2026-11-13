@@ -1,5 +1,13 @@
 # Implementation log
 
+## 2026-11-13 — Video import fixes, simplified folder navigation, drag-and-drop, and training pipeline completion
+
+- **Fixed Windows Video Import**: Resolved critical Windows Electron issue where `dialog.showOpenDialog` with both `openFile` and `openDirectory` forced Windows into directory-only selector mode, preventing video file selection. Separated file and folder import dialogs across Media Library, Reference Library, Training Studio, and Editor.
+- **Direct OS Drag-and-Drop & Folder Navigation**: Added native OS drag-and-drop support across all four video staging surfaces (Media Library, Editor, Reference Library, Training Studio) via Electron `webUtils.getPathForFile`. Added "Show in Folder" (`shell.showItemInFolder`) buttons to jump directly to any video on disk in Windows File Explorer, as well as prominent "Open Folder" quick-access navigation buttons.
+- **Simplified Storage Settings**: Redesigned `SettingsPage` to present a clean, intuitive layout highlighting primary video and export directories with usage capacity meters, 1-click "Open in Explorer", and direct "Add Videos" shortcuts. Moved technical system directories (projects, checkpoints, cache) into a clean collapsible advanced section.
+- **Complete Training Studio Pipeline**: Added `/training/dataset/seed` and `/training/dataset/from-reels` endpoints in backend. Staged training reels are now actively analyzed and synthesized into balanced pacing feedback datasets. When starting training without sufficient ratings, dataset auto-generation smoothly prepares samples, moves through dataset preparation, model fitting, and holdout evaluation, enabling promotion to active model. Added batch reference import (`/reference/import-batch`).
+- **Comprehensive Verification**: 93 backend pytest tests pass (100%); desktop TypeScript typecheck and oxlint/oxfmt checks pass with 0 errors and 0 warnings.
+
 ## 2026-11-01 continuation — Audio controls, color presets, and expanded export settings
 
 - **Expanded Export Presets & Video Controls**: Added five standard export presets: 9:16 Vertical HD (1080×1920), 9:16 Vertical Fast (720×1280), 4:5 Portrait Feed (1080×1350 for Instagram Feed), 16:9 Landscape HD (1920×1080), and 1:1 Square Feed (1080×1080). Added user-selectable frame rate (24 cinematic, 30 standard, 60 smooth) and quality (CRF 18 production, 20 balanced, 24 compact). Export setting changes dynamically update timeline configuration, preview aspect ratio, and render jobs without requiring full timeline re-generation.

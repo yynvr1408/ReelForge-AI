@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement, type DragEvent } from 'react';
 import {
   Upload,
   Scan,
@@ -6,6 +6,8 @@ import {
   XCircle,
   Clock,
   FolderPlus,
+  FolderOpen,
+  ExternalLink,
   Search,
   Tag,
   Trash2,
@@ -152,6 +154,8 @@ export function ReferenceLibraryPage() {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [refDir, setRefDir] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   async function refresh() {
     const filters: {
@@ -168,13 +172,18 @@ export function ReferenceLibraryPage() {
     if (statusFilter) filters.analysisStatus = statusFilter;
     filters.limit = 51;
     filters.offset = pageIndex * 50;
-    const [items, groups] = await Promise.all([
+    const [items, groups, storageInfo] = await Promise.all([
       window.reelforge.listReferences(filters),
       window.reelforge.listReferenceCollections(),
+      window.reelforge.getStorageInfo().catch(() => null),
     ]);
     setReferences(items.slice(0, 50));
     setHasMore(items.length > 50);
     setCollections(groups);
+    if (storageInfo) {
+      const r = storageInfo.locations.find((l) => l.key === 'reference');
+      if (r) setRefDir(r.path);
+    }
   }
 
   async function findSimilar(reference: ReferenceVideo) {
@@ -272,20 +281,57 @@ export function ReferenceLibraryPage() {
     }
   }
 
-  async function handleImport() {
-    setError(null);
-    const paths = await window.reelforge.pickReferenceFiles();
+  async function processReferencePaths(paths: string[]) {
     if (paths.length === 0) return;
+    setError(null);
     setImporting(true);
     try {
-      for (const sourcePath of paths) {
-        await window.reelforge.importReference(sourcePath);
-      }
+      await window.reelforge.importReferenceBatch(paths);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleImportFiles() {
+    const paths = await window.reelforge.pickReferenceFiles();
+    await processReferencePaths(paths);
+  }
+
+  async function handleImportFolder() {
+    const paths = await window.reelforge.pickReferenceFolder();
+    await processReferencePaths(paths);
+  }
+
+  function handleDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  async function handleDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+    const paths: string[] = [];
+    for (const f of files) {
+      try {
+        const full = window.reelforge.getPathForFile(f);
+        if (full) paths.push(full);
+      } catch {}
+    }
+    if (paths.length > 0) {
+      await processReferencePaths(paths);
     }
   }
 
@@ -348,20 +394,66 @@ export function ReferenceLibraryPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-neutral-400">
-          Downloaded reference reels used to learn an editing style.
-        </p>
-        <button
-          type="button"
-          onClick={handleImport}
-          disabled={importing}
-          className="flex items-center gap-1.5 rounded-md bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 disabled:opacity-50"
-        >
-          <Upload size={16} /> {importing ? 'Importing…' : 'Import reference'}
-        </button>
+    <div
+      className="flex flex-col gap-4"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => void handleDrop(e)}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-neutral-100">
+            Reference Library
+          </h2>
+          <p className="text-xs text-neutral-400">
+            Downloaded reference reels used to learn pacing and editing styles.
+          </p>
+          {refDir && (
+            <p
+              className="mt-0.5 truncate text-[11px] font-mono text-neutral-500"
+              title={refDir}
+            >
+              Storage: {refDir}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {refDir && (
+            <button
+              type="button"
+              onClick={() => window.reelforge.openFolderInShell(refDir)}
+              className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-neutral-300 hover:bg-white/10"
+              title="Open the references folder in Windows File Explorer"
+            >
+              <FolderOpen size={14} /> Open folder
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleImportFolder()}
+            disabled={importing}
+            className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:bg-white/10 disabled:opacity-50"
+            title="Import an entire folder of reference videos recursively"
+          >
+            <FolderPlus size={14} /> Add folder
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleImportFiles()}
+            disabled={importing}
+            className="flex items-center gap-1.5 rounded-md bg-orange-500 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+            title="Choose reference video files to import"
+          >
+            <Upload size={14} /> {importing ? 'Importing…' : 'Add videos'}
+          </button>
+        </div>
       </div>
+
+      {isDragging && (
+        <div className="flex h-24 items-center justify-center rounded-xl border-2 border-dashed border-orange-500 bg-orange-500/10 text-xs font-medium text-orange-300">
+          Drop reference video files or folders here to import
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -672,6 +764,16 @@ export function ReferenceLibraryPage() {
                     title="Rank analyzed references by measured style signals"
                   >
                     <Search size={13} /> Similar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      window.reelforge.revealInShell(reference.storage_path)
+                    }
+                    className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-1.5 text-xs text-neutral-400 hover:bg-white/5 hover:text-white"
+                    title="Reveal reference video file in File Explorer"
+                  >
+                    <ExternalLink size={13} />
                   </button>
                 </div>
                 {analysisJob?.reference_id === reference.id &&

@@ -111,8 +111,8 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.mediaImportDialog, async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Import media',
-      properties: ['openFile', 'openDirectory', 'multiSelections'],
+      title: 'Import media files',
+      properties: ['openFile', 'multiSelections'],
       filters: [
         {
           name: 'Media files',
@@ -137,7 +137,27 @@ export function registerIpcHandlers(
             'vtt',
           ],
         },
+        {
+          name: 'Video files',
+          extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'],
+        },
+        {
+          name: 'Audio files',
+          extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac'],
+        },
+        {
+          name: 'All files',
+          extensions: ['*'],
+        },
       ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.mediaImportFolderDialog, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import folder of media',
+      properties: ['openDirectory'],
     });
     return result.canceled ? [] : result.filePaths;
   });
@@ -243,6 +263,14 @@ export function registerIpcHandlers(
     return result.canceled ? [] : result.filePaths;
   });
 
+  ipcMain.handle(IPC_CHANNELS.referenceImportFolderDialog, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import folder of reference videos',
+      properties: ['openDirectory'],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
   ipcMain.handle(IPC_CHANNELS.referenceRelinkDialog, async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose replacement reference video',
@@ -263,6 +291,15 @@ export function registerIpcHandlers(
       return requireClient().post('/reference/import', {
         source_path: payload.sourcePath,
         name: payload.name,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.referenceImportBatch,
+    async (_event, payload: { sourcePaths: string[] }) => {
+      return requireClient().post('/reference/import-batch', {
+        source_paths: payload.sourcePaths,
       });
     },
   );
@@ -523,6 +560,13 @@ export function registerIpcHandlers(
     },
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.revealInShell,
+    async (_event, filePath: string) => {
+      await shell.showItemInFolder(filePath);
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.trainingInputReelsList, async () => {
     return requireClient().get('/training/input-reels');
   });
@@ -537,6 +581,14 @@ export function registerIpcHandlers(
           extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'],
         },
       ],
+    });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.trainingInputFolderDialog, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Add folder of reels to training input',
+      properties: ['openDirectory'],
     });
     return result.canceled ? [] : result.filePaths;
   });
@@ -699,6 +751,14 @@ export function registerIpcHandlers(
       );
     },
   );
+
+  ipcMain.handle(IPC_CHANNELS.trainingDatasetSeed, async () => {
+    return requireClient().post('/training/dataset/seed');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.trainingDatasetFromReels, async () => {
+    return requireClient().post('/training/dataset/from-reels');
+  });
 
   const RELEASES_OWNER = 'yynvr1408';
   const RELEASES_REPO = 'reelforge-ai-releases';

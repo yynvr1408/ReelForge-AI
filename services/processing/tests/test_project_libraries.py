@@ -599,3 +599,64 @@ def test_batch_media_import_recurses_and_reports_bad_files(
     assert len(results) == 2
     assert sum(result["media"] is not None for result in results) == 1
     assert sum(result["error"] is not None for result in results) == 1
+
+
+def test_training_job_auto_seeds_when_dataset_is_empty(
+    route_session, service_env, ffmpeg_path, ffprobe_path, monkeypatch
+):
+    from app.api.routes import training as training_routes
+    from app.core.config import Settings
+    from app.database.models import TrainingJob
+    from app.jobs.manager import JobHandle
+
+    class CapturedJobManager:
+        def __init__(self):
+            self.callbacks = {}
+            self.handles = {}
+
+        def submit(self, job_id, callback):
+            handle = JobHandle(job_id)
+            self.handles[job_id] = handle
+            self.callbacks[job_id] = callback
+
+    manager = CapturedJobManager()
+    monkeypatch.setattr(training_routes, "get_job_manager", lambda: manager)
+    settings = Settings(service_env, ffmpeg_path, ffprobe_path, "test-token", "127.0.0.1", 0)
+    settings.ensure_directories()
+
+    # Route session starts with 0 feedback entries
+    started = training_routes.start_pacing_training(settings, route_session)
+    manager.callbacks[started["id"]](manager.handles[started["id"]])
+    route_session.expire_all()
+    completed = route_session.get(TrainingJob, started["id"])
+    assert completed.status == "complete"
+    assert completed.stage == "complete"
+    assert completed.progress == 1.0
+    assert completed.candidate_json["sample_count"] >= 8
+
+
+def test_reference_batch_import_recurses_folder(
+    route_session, service_env, ffmpeg_path, ffprobe_path, synthetic_clip_factory, tmp_path
+):
+    from app.api.routes.reference import ReferenceBatchImportRequest, import_reference_batch
+    from app.core.config import Settings
+
+    source_dir = tmp_path / "ref-folder"
+    source_dir.mkdir()
+    valid = synthetic_clip_factory(duration_seconds=1, name="ref-valid", with_cuts=False)
+    (source_dir / "clip1.mp4").write_bytes(valid.read_bytes())
+    (source_dir / "subfolder").mkdir()
+    (source_dir / "subfolder" / "clip2.mp4").write_bytes(valid.read_bytes())
+    (source_dir / "readme.txt").write_text("not a video", encoding="utf-8")
+
+    settings = Settings(service_env, ffmpeg_path, ffprobe_path, "test-token", "127.0.0.1", 0)
+    settings.ensure_directories()
+
+    imported = import_reference_batch(
+        ReferenceBatchImportRequest(source_paths=[str(source_dir)]),
+        session=route_session,
+        settings=settings,
+    )
+    assert len(imported) == 2
+    assert all(r.analysis_status == "pending" for r in imported)
+

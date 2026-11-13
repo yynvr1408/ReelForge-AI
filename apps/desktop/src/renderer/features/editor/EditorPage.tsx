@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import {
   Upload,
+  FolderPlus,
+  FolderOpen,
+  ExternalLink,
+  Film,
   Wand2,
   Play,
-  FolderOpen,
   Save,
   ThumbsUp,
   ThumbsDown,
@@ -230,6 +233,8 @@ export function EditorPage() {
     canUndo: false,
     canRedo: false,
   });
+  const [mediaDir, setMediaDir] = useState<string | null>(null);
+  const [isDraggingSource, setIsDraggingSource] = useState(false);
   const historyRef = useRef<{
     past: TimelineGenerateResult[];
     future: TimelineGenerateResult[];
@@ -241,6 +246,13 @@ export function EditorPage() {
     if (status.state === 'ready') {
       void window.reelforge.listProjects().then(setProjects);
       void window.reelforge.listLLMAdapters().then(setAdapters);
+      void window.reelforge
+        .getStorageInfo()
+        .then((s) => {
+          const m = s.locations.find((l) => l.key === 'media');
+          if (m) setMediaDir(m.path);
+        })
+        .catch(() => {});
     }
   }, [status.state]);
 
@@ -320,20 +332,68 @@ export function EditorPage() {
     );
   }
 
-  async function handleImportSource() {
+  async function processSourcePaths(paths: string[]) {
+    if (paths.length === 0 || !activeProjectId) return;
     setError(null);
-    const paths = await window.reelforge.pickMediaFiles();
-    if (paths.length === 0) return;
     setBusy('importing');
     try {
-      for (const sourcePath of paths) {
-        await window.reelforge.importMedia(activeProjectId!, sourcePath);
+      const results = await window.reelforge.importMediaBatch(
+        activeProjectId,
+        paths,
+      );
+      const failures = results.filter((r) => r.error);
+      if (failures.length > 0) {
+        setError(
+          `Imported ${results.length - failures.length} of ${results.length} files. (${failures[0].error})`,
+        );
       }
-      setMedia(await window.reelforge.listMedia(activeProjectId!));
+      setMedia(await window.reelforge.listMedia(activeProjectId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed');
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleImportSourceFiles() {
+    const paths = await window.reelforge.pickMediaFiles();
+    await processSourcePaths(paths);
+  }
+
+  async function handleImportSourceFolder() {
+    const paths = await window.reelforge.pickMediaFolder();
+    await processSourcePaths(paths);
+  }
+
+  function handleSourceDragOver(e: DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingSource(true);
+  }
+
+  function handleSourceDragLeave(e: DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingSource(false);
+  }
+
+  async function handleSourceDrop(e: DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingSource(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+    const paths: string[] = [];
+    for (const f of files) {
+      try {
+        const full = window.reelforge.getPathForFile(f);
+        if (full) paths.push(full);
+      } catch {
+        // Fallback
+      }
+    }
+    if (paths.length > 0) {
+      await processSourcePaths(paths);
     }
   }
 
@@ -1090,25 +1150,127 @@ export function EditorPage() {
         </p>
       )}
 
-      <section className="rounded-lg border border-white/10 bg-neutral-950 p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium text-neutral-200">
-            1. Source footage (
-            {media.filter((asset) => asset.kind === 'video').length} videos)
-          </h3>
-          <button
-            type="button"
-            onClick={handleImportSource}
-            disabled={busy === 'importing'}
-            className="flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
-          >
-            <Upload size={14} /> Import footage
-          </button>
+      <section
+        className={`rounded-lg border bg-neutral-950 p-5 transition ${
+          isDraggingSource
+            ? 'border-orange-500 bg-orange-500/10'
+            : 'border-white/10'
+        }`}
+        onDragOver={handleSourceDragOver}
+        onDragLeave={handleSourceDragLeave}
+        onDrop={(e) => void handleSourceDrop(e)}
+      >
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-medium text-neutral-200">
+              1. Source footage ({videoMedia.length} videos)
+            </h3>
+            {mediaDir && (
+              <p
+                className="mt-0.5 truncate text-[11px] text-neutral-500 font-mono"
+                title={mediaDir}
+              >
+                Folder: {mediaDir}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {mediaDir && (
+              <button
+                type="button"
+                onClick={() => window.reelforge.openFolderInShell(mediaDir)}
+                className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-neutral-300 hover:bg-white/10"
+                title="Open source media folder in Windows Explorer"
+              >
+                <FolderOpen size={13} /> Open folder
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleImportSourceFolder()}
+              disabled={busy === 'importing'}
+              className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-neutral-200 hover:bg-white/10 disabled:opacity-50"
+              title="Add an entire folder of footage recursively"
+            >
+              <FolderPlus size={13} /> Add folder
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleImportSourceFiles()}
+              disabled={busy === 'importing'}
+              className="flex items-center gap-1.5 rounded-md bg-orange-500 px-3 py-1 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50"
+              title="Choose video files to import into this project"
+            >
+              <Upload size={13} />{' '}
+              {busy === 'importing' ? 'Adding…' : 'Add videos'}
+            </button>
+          </div>
         </div>
-        {media.filter((asset) => asset.kind === 'video').length === 0 && (
-          <p className="text-sm text-neutral-500">
-            No source footage imported yet.
-          </p>
+
+        {isDraggingSource ? (
+          <div className="flex h-24 items-center justify-center rounded-lg border-2 border-dashed border-orange-500 bg-orange-500/10 text-xs font-medium text-orange-300">
+            Drop video files or folders here to import into project
+          </div>
+        ) : videoMedia.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-white/10 bg-white/[0.02] p-6 text-center">
+            <Film size={24} className="text-neutral-600 mb-1" />
+            <p className="text-xs text-neutral-400">
+              No source footage in this project yet.
+            </p>
+            <p className="text-[11px] text-neutral-500 mt-0.5">
+              Click <strong>Add videos</strong> or drop video files directly
+              into this area.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-6 mt-2 max-h-48 overflow-y-auto pr-1">
+            {videoMedia.map((asset) => (
+              <div
+                key={asset.id}
+                className="group relative flex flex-col justify-between rounded-md border border-white/5 bg-neutral-900 p-2 hover:border-white/20"
+              >
+                <div className="relative aspect-video w-full overflow-hidden rounded bg-black/40 flex items-center justify-center">
+                  {asset.thumbnail_path ? (
+                    <img
+                      src={`file://${asset.thumbnail_path}`}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Film size={16} className="text-neutral-600" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      window.reelforge.revealInShell(asset.storage_path)
+                    }
+                    className="absolute right-1 top-1 rounded bg-black/80 p-1 text-white/80 opacity-0 transition group-hover:opacity-100 hover:text-white"
+                    title="Reveal file in File Explorer"
+                  >
+                    <ExternalLink size={11} />
+                  </button>
+                </div>
+                <div
+                  className="mt-1 truncate text-[11px] font-medium text-neutral-300"
+                  title={asset.storage_path.split(/[\\/]/).pop()}
+                >
+                  {asset.storage_path.split(/[\\/]/).pop()}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-neutral-500 mt-0.5">
+                  <span>
+                    {asset.duration_seconds
+                      ? `${asset.duration_seconds.toFixed(1)}s`
+                      : '—'}
+                  </span>
+                  {asset.width && asset.height && (
+                    <span>
+                      {asset.width}×{asset.height}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </section>
 

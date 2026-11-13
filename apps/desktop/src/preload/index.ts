@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-contract';
 import type {
@@ -102,8 +102,14 @@ const reelforgeApi = {
   pickMediaFiles(): Promise<string[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.mediaImportDialog);
   },
+  pickMediaFolder(): Promise<string[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.mediaImportFolderDialog);
+  },
   pickMediaFile(): Promise<string | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.mediaRelinkDialog);
+  },
+  getPathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
   },
   importMedia(
     projectId: string | null,
@@ -142,6 +148,9 @@ const reelforgeApi = {
   pickReferenceFiles(): Promise<string[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceImportDialog);
   },
+  pickReferenceFolder(): Promise<string[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceImportFolderDialog);
+  },
   pickReferenceReplacementFile(): Promise<string | null> {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceRelinkDialog);
   },
@@ -149,6 +158,11 @@ const reelforgeApi = {
     return ipcRenderer.invoke(IPC_CHANNELS.referenceImport, {
       sourcePath,
       name,
+    });
+  },
+  importReferenceBatch(sourcePaths: string[]): Promise<ReferenceVideo[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.referenceImportBatch, {
+      sourcePaths,
     });
   },
   relinkReference(
@@ -297,12 +311,18 @@ const reelforgeApi = {
   openFolderInShell(folderPath: string): Promise<void> {
     return ipcRenderer.invoke(IPC_CHANNELS.openFolderInShell, folderPath);
   },
+  revealInShell(filePath: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.revealInShell, filePath);
+  },
 
   listTrainingInputReels(): Promise<InputReel[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.trainingInputReelsList);
   },
   pickTrainingInputFiles(): Promise<string[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.trainingInputReelsImportDialog);
+  },
+  pickTrainingInputFolder(): Promise<string[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingInputFolderDialog);
   },
   importTrainingInputReel(sourcePath: string): Promise<InputReel> {
     return ipcRenderer.invoke(
@@ -378,6 +398,12 @@ const reelforgeApi = {
     projectId?: string;
   }): Promise<DatasetManifest> {
     return ipcRenderer.invoke(IPC_CHANNELS.trainingDatasetManifest, filters);
+  },
+  seedTrainingDataset(): Promise<DatasetManifest> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingDatasetSeed);
+  },
+  generateTrainingDatasetFromReels(): Promise<DatasetManifest> {
+    return ipcRenderer.invoke(IPC_CHANNELS.trainingDatasetFromReels);
   },
   getAppVersion(): Promise<AppVersionInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.appVersion);

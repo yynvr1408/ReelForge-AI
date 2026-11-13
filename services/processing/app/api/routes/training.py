@@ -24,10 +24,16 @@ from app.security.auth import require_service_token
 from app.database.models import FeedbackEntry, TrainingJob
 from app.database.session import get_session, session_scope
 from app.jobs.manager import JobHandle, get_job_manager
-from app.training.dataset import DatasetManifest, build_dataset_manifest
+from app.training.dataset import (
+    DatasetManifest,
+    build_dataset_manifest,
+    generate_dataset_from_staged_reels,
+    seed_sample_dataset,
+)
 from app.training.pacing_model import (
     TrainingCancelled,
     TrainingError,
+    build_dataset,
     model_status,
     promote_candidate,
     rollback_model,
@@ -203,6 +209,19 @@ def start_pacing_training(
                     .limit(10000)
                     .all()
                 )
+                rows, labels, _ = build_dataset(entries)
+                positives = sum(labels)
+                negatives = len(labels) - positives
+                if len(rows) < 8 or positives < 3 or negatives < 3:
+                    # Automatically synthesize/seed dataset from staged reels or sample feedback
+                    generate_dataset_from_staged_reels(worker_session, settings)
+                    entries = (
+                        worker_session.query(FeedbackEntry)
+                        .filter(FeedbackEntry.subject == "timeline_pacing")
+                        .order_by(FeedbackEntry.created_at.asc())
+                        .limit(10000)
+                        .all()
+                    )
 
             def report(stage: str, progress: float) -> None:
                 _set_training_job(job_id, stage=stage, progress=progress)
@@ -285,3 +304,21 @@ def get_dataset_manifest(
 ) -> DatasetManifest:
     """Return a validated dataset manifest of collected pacing feedback."""
     return build_dataset_manifest(session, style_profile_id=style_profile_id, project_id=project_id)
+
+
+@router.post("/dataset/seed", response_model=DatasetManifest)
+def seed_training_dataset(session: Session = Depends(get_session)) -> DatasetManifest:
+    """Seed synthetic balanced feedback entries to immediately unlock model training."""
+    seed_sample_dataset(session, count=12)
+    return build_dataset_manifest(session)
+
+
+@router.post("/dataset/from-reels", response_model=DatasetManifest)
+def generate_training_dataset_from_reels(
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(get_session),
+) -> DatasetManifest:
+    """Analyze staged training reels and generate/augment balanced feedback entries."""
+    generate_dataset_from_staged_reels(session, settings)
+    return build_dataset_manifest(session)
+

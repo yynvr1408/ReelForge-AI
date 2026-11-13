@@ -30,6 +30,10 @@ class ReferenceImportRequest(BaseModel):
     name: str | None = None
 
 
+class ReferenceBatchImportRequest(BaseModel):
+    source_paths: list[str]
+
+
 class ReferenceRelinkRequest(BaseModel):
     source_path: str
 
@@ -221,6 +225,50 @@ def import_reference(
     session.commit()
     session.refresh(reference)
     return reference
+
+
+@router.post("/import-batch", response_model=list[ReferenceResponse])
+def import_reference_batch(
+    payload: ReferenceBatchImportRequest,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> list[ReferenceVideo]:
+    video_exts = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+    candidates: list[Path] = []
+    for source in payload.source_paths:
+        path = Path(source).expanduser()
+        if path.is_dir():
+            for c in path.rglob("*"):
+                if c.is_file() and not c.is_symlink() and c.suffix.lower() in video_exts:
+                    candidates.append(c)
+        elif path.is_file() and path.suffix.lower() in video_exts:
+            candidates.append(path)
+
+    imported_refs: list[ReferenceVideo] = []
+    for candidate in sorted(dict.fromkeys(candidates)):
+        try:
+            result = import_media_file(settings, str(candidate), settings.reference_dir)
+            if result.kind != "video":
+                continue
+            ref = ReferenceVideo(
+                name=result.original_path.stem,
+                original_path=str(result.original_path),
+                storage_path=str(result.storage_path),
+                duration_seconds=result.probe.duration_seconds if result.probe else None,
+                width=result.probe.width if result.probe else None,
+                height=result.probe.height if result.probe else None,
+                frame_rate=result.probe.frame_rate if result.probe else None,
+                probe_json=result.probe.raw if result.probe else None,
+                analysis_status="pending",
+            )
+            session.add(ref)
+            session.flush()
+            imported_refs.append(ref)
+        except (MediaImportError, OSError):
+            continue
+    session.commit()
+    return imported_refs
+
 
 
 @router.post("/{reference_id}/relink", response_model=ReferenceResponse)
