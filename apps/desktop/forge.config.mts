@@ -36,12 +36,7 @@ const shortBuildTempDir =
  * docs/releases/release-process.md.
  */
 function buildProcessingServiceExecutable(): void {
-  const pythonExe = path.join(
-    processingDir,
-    '.venv',
-    'Scripts',
-    'python.exe',
-  );
+  const pythonExe = path.join(processingDir, '.venv', 'Scripts', 'python.exe');
   if (!existsSync(pythonExe)) {
     throw new Error(
       `Python not found at ${pythonExe}. Run: cd services/processing && ./.venv/Scripts/pip install -e ".[build]"`,
@@ -52,7 +47,13 @@ function buildProcessingServiceExecutable(): void {
   );
   execFileSync(
     pythonExe,
-    ['-m', 'PyInstaller', 'reelforge-processing.spec', '--noconfirm', '--clean'],
+    [
+      '-m',
+      'PyInstaller',
+      'reelforge-processing.spec',
+      '--noconfirm',
+      '--clean',
+    ],
     {
       cwd: processingDir,
       stdio: 'inherit',

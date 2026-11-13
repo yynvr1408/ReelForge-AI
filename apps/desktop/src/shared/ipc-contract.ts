@@ -88,6 +88,8 @@ export const IPC_CHANNELS = {
   checkForUpdates: 'reelforge:check-for-updates',
   listReleases: 'reelforge:list-releases',
   installRelease: 'reelforge:install-release',
+  listLocalReleases: 'reelforge:list-local-releases',
+  installLocalRelease: 'reelforge:install-local-release',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -451,4 +453,13 @@ export interface ReleaseInfo {
 export interface InstallReleaseResult {
   success: boolean;
   message: string;
+}
+
+export interface LocalReleaseBuild {
+  filename: string;
+  filePath: string;
+  version: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  isCurrent: boolean;
 }

@@ -12,6 +12,7 @@ import type {
   InputReel,
   InstallReleaseResult,
   LLMAdapterInfo,
+  LocalReleaseBuild,
   MediaAsset,
   MediaBatchImportResult,
   MediaPage,
@@ -419,6 +420,14 @@ const reelforgeApi = {
     version: string;
   }): Promise<InstallReleaseResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.installRelease, payload);
+  },
+  listLocalReleases(): Promise<LocalReleaseBuild[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.listLocalReleases);
+  },
+  installLocalRelease(payload: {
+    filePath: string;
+  }): Promise<InstallReleaseResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.installLocalRelease, payload);
   },
 };
 

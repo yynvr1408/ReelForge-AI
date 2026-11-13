@@ -1037,4 +1037,110 @@ export function registerIpcHandlers(
       };
     },
   );
+
+  ipcMain.handle(IPC_CHANNELS.listLocalReleases, async () => {
+    const currentVersion = app.getVersion().replace(/^v/, '');
+    const candidateDirs = [
+      path.resolve(app.getAppPath(), '..', '..', 'releases'),
+      path.resolve(process.cwd(), 'releases'),
+      path.resolve(
+        app.getAppPath(),
+        '..',
+        '..',
+        'b',
+        'make',
+        'squirrel.windows',
+        'x64',
+      ),
+      path.resolve(process.cwd(), 'b', 'make', 'squirrel.windows', 'x64'),
+      path.resolve(
+        app.getAppPath(),
+        '..',
+        '..',
+        'apps',
+        'desktop',
+        'out',
+        'make',
+        'squirrel.windows',
+        'x64',
+      ),
+      path.resolve(
+        process.cwd(),
+        'apps',
+        'desktop',
+        'out',
+        'make',
+        'squirrel.windows',
+        'x64',
+      ),
+    ];
+
+    const results: Array<{
+      filename: string;
+      filePath: string;
+      version: string;
+      sizeBytes: number;
+      modifiedAt: string;
+      isCurrent: boolean;
+    }> = [];
+    const seenFiles = new Set<string>();
+
+    for (const dir of candidateDirs) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.exe'))
+            continue;
+          const fullPath = path.join(dir, entry.name);
+          if (seenFiles.has(entry.name)) continue;
+          seenFiles.add(entry.name);
+
+          const stat = fs.statSync(fullPath);
+          const match = entry.name.match(/(\d+\.\d+\.\d+)/);
+          const version = match ? match[1] : 'unknown';
+          const isCurrent = version === currentVersion;
+
+          results.push({
+            filename: entry.name,
+            filePath: fullPath,
+            version,
+            sizeBytes: stat.size,
+            modifiedAt: stat.mtime.toISOString(),
+            isCurrent,
+          });
+        }
+      } catch (err) {
+        console.warn('Could not scan for local release builds in:', dir, err);
+      }
+    }
+
+    results.sort((a, b) => compareVersions(b.version, a.version));
+    return results;
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.installLocalRelease,
+    async (_event, payload: { filePath: string }) => {
+      const { filePath } = payload;
+      if (!filePath || !fs.existsSync(filePath)) {
+        throw new Error('Local installer file was not found');
+      }
+
+      const child = spawn(filePath, [], {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+
+      setTimeout(() => {
+        app.quit();
+      }, 1500);
+
+      return {
+        success: true,
+        message: `Launching ${path.basename(filePath)}. ReelForge AI is closing to apply installation.`,
+      };
+    },
+  );
 }

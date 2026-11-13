@@ -1,5 +1,14 @@
 # Implementation log
 
+## 2026-11-13 — v1.0.0 Production Release: Updates UI Overhaul, Rollback Engine, and Local Builds Management
+
+- **Clean Updates Experience**: Streamlined the `UpdatesPage` interface, stripping internal repository architecture details and technical deployment manifests in favor of a clean consumer interface with live version status, release highlights, and seamless update detection.
+- **Rollback Engine & Version History**: Built comprehensive version history with 1-click rollback support. Users can downgrade to previous stable releases (`v0.3.0`, `v0.2.2`) with automatic download and executable handover.
+- **Local Builds & Offline Rollback**: Added native discovery of local `.exe` installers in the repository's `releases/` directory and build artifacts. Users can launch local setup packages or re-install offline instantly without network access.
+- **Git Release Workflow & Tag Alignment**: Adopted standard commit and tag conventions matching `Bump to 1.0.0 - <summary>` with tag `v1.0.0`. Preserved the latest two version installers (`v1.0.0` and `v0.3.0`) in the local repository workspace.
+- **Comprehensive Verification**: 93 backend pytest tests pass (100%); desktop TypeScript typecheck and oxlint/oxfmt pass with 0 errors and 0 warnings.
+
+
 ## 2026-11-13 — Video import fixes, simplified folder navigation, drag-and-drop, and training pipeline completion
 
 - **Fixed Windows Video Import**: Resolved critical Windows Electron issue where `dialog.showOpenDialog` with both `openFile` and `openDirectory` forced Windows into directory-only selector mode, preventing video file selection. Separated file and folder import dialogs across Media Library, Reference Library, Training Studio, and Editor.

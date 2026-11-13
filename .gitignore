@@ -40,3 +40,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local release binaries (large .exe and .nupkg files kept on local disk)
+releases/*.exe
+releases/*.nupkg
+releases/*.zip
