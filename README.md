@@ -23,6 +23,20 @@ For the latest version history and release notes, see [CHANGELOG.md](CHANGELOG.m
 
 ---
 
+## Version Snapshots
+
+Every updated release maintains its full documentation snapshot in [`docs/readme-versions/`](docs/readme-versions/):
+
+| Version | Release Date | Summary | Documentation |
+| :---: | :---: | :--- | :---: |
+| **v1.0.0** | 2026-11-13 | Production baseline: Clean updates UI, rollback engine, local builds | [README-v1.0.0.md](docs/readme-versions/README-v1.0.0.md) |
+| **v0.3.0** | 2026-11-13 | Training dataset pipeline, folder navigation, native drag-and-drop | [README-v0.3.0.md](docs/readme-versions/README-v0.3.0.md) |
+| **v0.2.2** | 2026-10-30 | Color grading presets, audio controls, social export aspect ratios | [README-v0.2.2.md](docs/readme-versions/README-v0.2.2.md) |
+| **v0.2.1** | 2026-10-29 | Post-render quality scans, 50-step undo/redo, build hardening | [README-v0.2.1.md](docs/readme-versions/README-v0.2.1.md) |
+| **v0.2.0** | 2026-10-28 | Beat snapping, dialogue auto-captions, in-app updates tab | [README-v0.2.0.md](docs/readme-versions/README-v0.2.0.md) |
+
+---
+
 ## Installation & Releases
 
 Pre-built Windows installers are available in the local [`releases/`](releases/) directory and on [GitHub Releases](https://github.com/yynvr1408/reelforge-ai-releases/releases):

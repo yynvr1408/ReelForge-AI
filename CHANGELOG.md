@@ -9,38 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0] - 2026-11-13
 
-### Initial Production Release
+### Initial Production Release Baseline
 
-This marks the official `v1.0.0` production baseline of ReelForge AI — an offline-first desktop video editor with reference-video style learning, non-generative original-pixel editing, and integrated local machine-learning intelligence.
+This release establishes the official `v1.0.0` production baseline of ReelForge AI — a fully integrated, offline-first desktop video editor with reference-video style learning, original-pixel non-generative editing, and self-contained local ML intelligence.
 
-### Improved & Enhanced
+#### Improved & Enhanced
+* **Simplified Folder Navigation**: Redesigned storage settings with an intuitive 4-card directory architecture (Media Storage, Exports, Reference Reels, Training Reels) equipped with capacity meters and 1-click **"Open in Explorer"** shortcuts.
+* **Video Import & Native Drag-and-Drop**: Separated Windows file selection and folder picker dialogs to prevent directory collisions. Added native OS drag-and-drop support across all studio workspaces (Media Library, Reference Library, Training Studio, Editor).
+* **Pacing Preference Training Engine**: Staged training reels are automatically analyzed for duration and shot cadence via `/training/dataset/from-reels`. Added 1-click dataset seed generation (`/training/dataset/seed`) and self-healing training execution (`preparing_dataset` → `training_model` → `evaluating_candidate` → `complete`).
+* **Consumer-Focused Updates & Rollback**: Cleaned the Updates UI by eliminating technical repository architecture noise. Added 1-click online rollback to previous versions and local build discovery for offline re-installation and rollback.
+* **Release Artifacts**: Built standalone Windows setup package (`ReelForge AI-1.0.0 Setup.exe`) preserved locally in `releases/`.
 
-* **Simplified Folder Navigation & Direct Access**:
-  - Overhauled storage settings into an intuitive 4-card layout (Media Storage, Exports, Reference Reels, Training Reels).
-  - Added capacity gauges with real-time disk space tracking.
-  - Added 1-click **"Open in Explorer"** buttons to navigate straight to any folder in Windows File Explorer.
-  - Collapsed internal database, cache, and ML checkpoints into an advanced settings accordion.
+---
 
-* **Video Import & Native Drag-and-Drop**:
-  - Resolved Electron Windows dialog collision where combining `openFile` and `openDirectory` locked dialogs to folder-only mode.
-  - Provided dedicated multi-file video selector (`.mp4`, `.mov`, `.mkv`, `.webm`) and batch folder import.
-  - Enabled native OS drag-and-drop across Media Library, Reference Library, Training Studio, and Editor.
-  - Added "Show in Folder" context triggers for all imported footage and exported renders.
+## [0.3.0] - 2026-11-13
 
-* **Pacing Preference Training Engine**:
-  - Automated cadence and shot duration extraction from staged training reels via `/training/dataset/from-reels`.
-  - Added 1-click synthetic dataset seeding (`/training/dataset/seed`) to bootstrap training without manual ratings.
-  - Implemented self-healing training trigger: seamlessly transitions through `preparing_dataset` → `training_model` → `evaluating_candidate` → `complete`.
-  - Offline CPU logistic regression model learning user pacing style without cloud telemetry.
+### Training Studio Pipeline & Storage Navigation
 
-* **Clean Consumer Updates & Rollback System**:
-  - Redesigned Updates page, removing internal repository architecture noise in favor of a clean consumer interface.
-  - Built-in GitHub Releases integration querying official releases.
-  - Added **1-Click Rollback**: easily downgrade or switch versions.
-  - Added **Local Builds & Offline Rollback**: detects installer executables (`.exe`) in the local repository for instant offline re-installation and rollback.
+#### Improved & Enhanced
+* **Video Dialog Separation**: Split `dialog.showOpenDialog` into distinct `openFile` and `openDirectory` IPC handlers to resolve Windows Electron directory lockup.
+* **Training Dataset Cadence Analysis**: Added `/training/dataset/from-reels` to extract tempo and shot pacing metrics from staged MP4 reels in `storage/training_reels`.
+* **Dataset Bootstrapping**: Added `/training/dataset/seed` to seed balanced pacing samples so initial training runs complete without requiring manual feedback ratings.
+* **Batch Reference Import**: Added recursive directory import for reference reels (`/reference/import-batch`).
+* **Direct Explorer Navigation**: Added `revealInShell` (`shell.showItemInFolder`) to jump directly to assets in Windows Explorer.
 
-* **Editing Studio Controls**:
-  - Creative color grading presets (Neutral, Golden Hour, Cinematic Teal, Vivid Pop, Vintage Film, Dramatic B&W) with "Grade to all" application.
-  - Per-clip audio volume control (-24 dB to +12 dB), mute toggle, and smooth audio fade in/out sliders.
-  - Expanded export aspect ratios (9:16 Vertical HD/Fast, 4:5 Portrait Feed, 16:9 Landscape HD, 1:1 Square Feed).
-  - 50-step in-session timeline undo/redo.
+---
+
+## [0.2.2] - 2026-10-30
+
+### Color Grading Presets, Audio Controls & Expanded Export Settings
+
+#### Improved & Enhanced
+* **Creative Color Grading Presets**: Added 6 creative color grading presets (Neutral, Golden Hour, Cinematic Teal, Vivid Pop, Vintage Film, Dramatic B&W) with 1-click "Grade to all" application across timeline clips.
+* **Audio Gain, Mute & Fades**: Added per-clip audio volume sliders (-24 dB to +12 dB), instant mute toggle, and configurable audio fade-in/fade-out durations (0 to 2.0s) mapped directly to FFmpeg `volume` and `afade` filter graphs.
+* **Expanded Export Presets**: Added five social-media ready aspect ratios: 9:16 Vertical HD (1080×1920), 9:16 Vertical Fast (720×1280), 4:5 Portrait Feed (1080×1350), 16:9 Landscape HD (1920×1080), and 1:1 Square Feed (1080×1080) with selectable framerates (24, 30, 60 fps) and CRF quality.
+* **Release Management Architecture**: Configured standalone public release repository (`yynvr1408/reelforge-ai-releases`) with Squirrel installer publishing.
+
+---
+
+## [0.2.1] - 2026-10-29
+
+### CI/CD Pipeline & Windows Packaging Hardening
+
+#### Improved & Enhanced
+* **Electron Forge Build Hardening**: Configured Node 22 CI runtime, disabled temp directory conflicts (`tmpdir: false`), and enabled local Electron runtime cache for offline packaging.
+* **Post-Render Quality Verification**: Added FFmpeg post-render scan detecting sustained black intervals and audio clipping near 0 dBFS.
+* **In-Session Timeline Undo/Redo**: Added up to 50-step undo/redo stack covering clip trims, speed, reordering, and color modifications.
+
+---
+
+## [0.2.0] - 2026-10-28
+
+### Audio Intelligence, LLM Adapters & In-App Updates
+
+#### Added
+* **Musical Beat Snapping**: Bounded autocorrelation tempo hypothesis and cut alignment to musical beat markers.
+* **Dialogue Auto-Captions**: Rule-based subtitle generation aligned to dialogue audio segments.
+* **In-App Updates Tab**: Added dedicated Updates page checking GitHub releases.
+* **LLM Adapters (Phase 6)**: Offline structured prompt adapters for local timeline planning.
+* **Storage Cache Purge**: Direct cache cleanup action in Settings.
