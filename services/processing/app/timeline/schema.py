@@ -19,6 +19,9 @@ class ColorAdjustment(BaseModel):
     contrast: float = Field(default=0.0, ge=-0.9, le=1.0)
     saturation: float = Field(default=0.0, ge=-1.0, le=2.0)
     temperature: float = Field(default=0.0, ge=-1.0, le=1.0)
+    lut_path: str | None = None
+    lut_name: str | None = None
+    lut_intensity: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class TextOverlay(BaseModel):
@@ -26,6 +29,16 @@ class TextOverlay(BaseModel):
     start_seconds: float = Field(ge=0)
     end_seconds: float = Field(gt=0)
     position: Literal["top", "center", "bottom"] = "bottom"
+    style_preset: Literal[
+        "default",
+        "bold_yellow",
+        "minimal_white",
+        "cinematic_box",
+        "neon_cyan",
+    ] = "default"
+    animation_preset: Literal["none", "pop_in", "fade", "slide_up"] = "none"
+    font_size: int = Field(default=0, ge=0, le=120)
+    font_color: str = "#FFFFFF"
 
     @field_validator("text")
     @classmethod
@@ -62,7 +75,17 @@ class Clip(BaseModel):
     reframe_y: float = Field(default=0.5, ge=0, le=1)
     color: ColorAdjustment = Field(default_factory=ColorAdjustment)
     audio: AudioAdjustment = Field(default_factory=AudioAdjustment)
-    transition_in: Literal["none", "cut", "fade", "crossfade"] = "cut"
+    transition_in: Literal[
+        "none",
+        "cut",
+        "fade",
+        "crossfade",
+        "wipeleft",
+        "wiperight",
+        "slideup",
+        "slidedown",
+        "dissolve",
+    ] = "cut"
     transition_duration_seconds: float = Field(default=0.0, ge=0.0, le=10.0)
     quality_score: float | None = Field(default=None, ge=0, le=1)
     selection_reason: str | None = Field(default=None, max_length=500)
@@ -97,10 +120,30 @@ class ExportSettings(BaseModel):
     crf: int = Field(ge=0, le=51, default=20)
 
 
+class BackgroundMusic(BaseModel):
+    media_path: str | None = None
+    media_id: str | None = None
+    volume_db: float = Field(default=-8.0, ge=-40.0, le=12.0)
+    fade_in_seconds: float = Field(default=1.0, ge=0.0, le=10.0)
+    fade_out_seconds: float = Field(default=1.5, ge=0.0, le=10.0)
+    ducking_enabled: bool = True
+    ducking_attenuation_db: float = Field(default=-12.0, ge=-30.0, le=0.0)
+    loop: bool = True
+
+
+class VoiceoverTrack(BaseModel):
+    media_path: str | None = None
+    media_id: str | None = None
+    volume_db: float = Field(default=0.0, ge=-40.0, le=12.0)
+    start_time_seconds: float = Field(default=0.0, ge=0.0)
+
+
 class Timeline(BaseModel):
     schema_version: int = TIMELINE_SCHEMA_VERSION
     tracks: list[Track] = Field(default_factory=list)
     export_settings: ExportSettings = Field(default_factory=ExportSettings)
+    background_music: BackgroundMusic | None = None
+    voiceover: VoiceoverTrack | None = None
 
     @property
     def total_duration_seconds(self) -> float:

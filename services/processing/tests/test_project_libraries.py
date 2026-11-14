@@ -185,7 +185,11 @@ def test_preserve_original_colors_brief_overrides_profile_grade(route_session):
     )
 
     color = result["timeline"]["tracks"][0]["clips"][0]["color"]
-    assert color == {"exposure": 0.0, "contrast": 0.0, "saturation": 0.0, "temperature": 0.0}
+    assert color["exposure"] == 0.0
+    assert color["contrast"] == 0.0
+    assert color["saturation"] == 0.0
+    assert color["temperature"] == 0.0
+    assert color.get("lut_path") is None
     assert result["interpretation"]["preserve_original_colors"] is True
     assert result["preference_adjustment"]["color_feedback_overridden_by_brief"] is True
 

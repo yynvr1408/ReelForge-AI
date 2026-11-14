@@ -101,6 +101,10 @@ class Settings:
         return self.custom_checkpoints_dir or (self.training_dir / "checkpoints")
 
     @property
+    def luts_dir(self) -> Path:
+        return self.data_dir / "luts"
+
+    @property
     def database_path(self) -> Path:
         return self.data_dir / "reelforge.db"
 
@@ -127,6 +131,7 @@ class Settings:
             self.thumbnails_dir,
             self.training_input_dir,
             self.checkpoints_dir,
+            self.luts_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
 

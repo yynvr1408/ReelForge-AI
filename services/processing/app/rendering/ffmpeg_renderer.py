@@ -127,6 +127,10 @@ def build_filter_graph(
             if color.temperature
             else ""
         )
+        lut_filter = ""
+        if color.lut_path and Path(color.lut_path).exists():
+            escaped_lut = str(Path(color.lut_path).resolve()).replace("\\", "/").replace(":", "\\:")
+            lut_filter = f",lut3d=file='{escaped_lut}':interp=tetrahedral"
         stabilization_filter = ",deshake=rx=16:ry=16:edge=blank" if clip.stabilize else ""
         fade_in_filter = (
             f",fade=t=in:st=0:d={clip.transition_duration_seconds:.3f}"
@@ -140,7 +144,7 @@ def build_filter_graph(
             f"scale={export.width}:{export.height}:force_original_aspect_ratio=increase,"
             f"crop={export.width}:{export.height}:"
             f"x=(iw-ow)*{clip.reframe_x:.4f}:y=(ih-oh)*{clip.reframe_y:.4f}"
-            f"{eq_filter}{temperature_filter}{stabilization_filter}{fade_in_filter},"
+            f"{eq_filter}{temperature_filter}{lut_filter}{stabilization_filter}{fade_in_filter},"
             f"fps={export.frame_rate:.3f},settb=AVTB,format=yuv420p[{v_label}]"
         )
         filter_parts.append(video_filter)
@@ -177,18 +181,28 @@ def build_filter_graph(
     current_video = video_labels[0]
     current_audio = audio_labels[0]
     accumulated_duration = ordered_clips[0].duration_seconds
+    xfade_transitions = {
+        "crossfade": "fade",
+        "fade": "fade",
+        "wipeleft": "wipeleft",
+        "wiperight": "wiperight",
+        "slideup": "slideup",
+        "slidedown": "slidedown",
+        "dissolve": "dissolve",
+    }
     for index, clip in enumerate(ordered_clips[1:], start=1):
         next_video = video_labels[index]
         next_audio = audio_labels[index]
         output_video = f"[joinv{index}]"
         output_audio = f"[joina{index}]"
         transition_duration = clip.transition_duration_seconds
-        if clip.transition_in == "crossfade":
+        if clip.transition_in in xfade_transitions:
+            trans_name = xfade_transitions[clip.transition_in]
             if transition_duration <= 0 or transition_duration > min(accumulated_duration, clip.duration_seconds):
-                raise RenderError(f"Invalid crossfade duration on clip {clip.id}")
+                raise RenderError(f"Invalid {clip.transition_in} duration on clip {clip.id}")
             offset = accumulated_duration - transition_duration
             filter_parts.append(
-                f"{current_video}{next_video}xfade=transition=fade:duration={transition_duration:.3f}:"
+                f"{current_video}{next_video}xfade=transition={trans_name}:duration={transition_duration:.3f}:"
                 f"offset={offset:.3f}{output_video}"
             )
             filter_parts.append(
@@ -214,14 +228,101 @@ def build_filter_graph(
             "center": "(h-text_h)/2",
             "bottom": "h-text_h-h*0.10",
         }[overlay.position]
+
+        style = getattr(overlay, "style_preset", "default")
+        if style == "bold_yellow":
+            style_opts = "fontsize=h/15:fontcolor=yellow:borderw=4:bordercolor=black:shadowcolor=black@0.6:shadowx=3:shadowy=3"
+        elif style == "minimal_white":
+            style_opts = "fontsize=h/18:fontcolor=white:borderw=1:bordercolor=black@0.4:shadowcolor=black@0.6:shadowx=2:shadowy=2"
+        elif style == "cinematic_box":
+            style_opts = "fontsize=h/19:fontcolor=white:box=1:boxcolor=black@0.65:boxborderw=8"
+        elif style == "neon_cyan":
+            style_opts = "fontsize=h/16:fontcolor=0x00FFFF:borderw=4:bordercolor=0x003366:shadowcolor=0x00FFFF@0.5:shadowx=0:shadowy=0"
+        else:
+            style_opts = "fontsize=h/18:fontcolor=white:borderw=3:bordercolor=black"
+
+        if getattr(overlay, "font_size", 0) > 0:
+            fs = overlay.font_size
+            style_opts = f"fontsize={fs}:" + ":".join(p for p in style_opts.split(":") if not p.startswith("fontsize="))
+
+        anim = getattr(overlay, "animation_preset", "none")
+        st = overlay.start_seconds
+        et = overlay.end_seconds
+
+        anim_opts = ""
+        if anim == "pop_in":
+            anim_opts = f":alpha='if(lt(t-{st:.3f}\\,0.12)\\,(t-{st:.3f})/0.12\\,1)'"
+        elif anim == "slide_up":
+            y_expression = f"{y_expression}+if(lt(t-{st:.3f}\\,0.2)\\,(1-(t-{st:.3f})/0.2)*30\\,0)"
+        elif anim == "fade":
+            anim_opts = f":alpha='if(lt(t-{st:.3f}\\,0.18)\\,(t-{st:.3f})/0.18\\,if(gt(t\\,{et:.3f}-0.18)\\,({et:.3f}-t)/0.18\\,1))'"
+
         next_label = f"[caption{caption_index}]"
         filter_parts.append(
-            f"{video_output}drawtext={_fontfile_option()}textfile='{caption_path.name}':expansion=none:fontcolor=white:"
-            f"fontsize=h/18:borderw=3:bordercolor=black:x=(w-text_w)/2:y={y_expression}:"
-            f"enable='between(t\\,{overlay.start_seconds:.3f}\\,{overlay.end_seconds:.3f})'{next_label}"
+            f"{video_output}drawtext={_fontfile_option()}textfile='{caption_path.name}':expansion=none:{style_opts}:"
+            f"x=(w-text_w)/2:y={y_expression}{anim_opts}:enable='between(t\\,{st:.3f}\\,{et:.3f})'{next_label}"
         )
         video_output = next_label
         caption_index += 1
+
+    # Multi-track audio mixing: Voiceover & Background Music with Auto-Ducking
+    speech_audio = audio_output
+    bgm = getattr(timeline, "background_music", None)
+    vo = getattr(timeline, "voiceover", None)
+    next_input_index = len(input_args) // 2
+
+    if vo and vo.media_path and Path(vo.media_path).exists():
+        vo_path = Path(vo.media_path)
+        input_args.extend(["-i", str(vo_path)])
+        vo_idx = next_input_index
+        next_input_index += 1
+        vo_gain = 0.0 if vo.volume_db <= -40.0 else (10 ** (vo.volume_db / 20))
+        vo_delay_ms = max(0, int(vo.start_time_seconds * 1000))
+        vo_label = "[vo_track]"
+        filter_parts.append(
+            f"[{vo_idx}:a]volume={vo_gain:.4f},adelay={vo_delay_ms}|{vo_delay_ms},"
+            f"aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo{vo_label}"
+        )
+        mixed_speech_label = "[speech_with_vo]"
+        filter_parts.append(
+            f"{speech_audio}{vo_label}amix=inputs=2:duration=first:dropout_transition=2:normalize=0{mixed_speech_label}"
+        )
+        speech_audio = mixed_speech_label
+
+    if bgm and bgm.media_path and Path(bgm.media_path).exists():
+        bgm_path = Path(bgm.media_path)
+        input_args.extend(["-i", str(bgm_path)])
+        bgm_idx = next_input_index
+        next_input_index += 1
+        bgm_gain = 0.0 if bgm.volume_db <= -40.0 else (10 ** (bgm.volume_db / 20))
+        bgm_fade_in = f"afade=t=in:st=0:d={bgm.fade_in_seconds:.3f}" if bgm.fade_in_seconds > 0 else ""
+        fade_out_st = max(0.0, accumulated_duration - bgm.fade_out_seconds)
+        bgm_fade_out = f"afade=t=out:st={fade_out_st:.3f}:d={bgm.fade_out_seconds:.3f}" if bgm.fade_out_seconds > 0 else ""
+        fade_chain = f",{','.join(f for f in [bgm_fade_in, bgm_fade_out] if f)}" if (bgm_fade_in or bgm_fade_out) else ""
+
+        bgm_base_label = "[bgm_base]"
+        filter_parts.append(
+            f"[{bgm_idx}:a]aloop=loop=-1:size=2e+09,atrim=0:{accumulated_duration:.3f},"
+            f"asetpts=PTS-STARTPTS,volume={bgm_gain:.4f},aresample=48000,"
+            f"aformat=sample_fmts=fltp:channel_layouts=stereo{fade_chain}{bgm_base_label}"
+        )
+
+        if bgm.ducking_enabled:
+            bgm_ducked_label = "[bgm_ducked]"
+            filter_parts.append(
+                f"{bgm_base_label}{speech_audio}sidechaincompress=threshold=0.08:ratio=4:attack=50:release=350:makeup=1{bgm_ducked_label}"
+            )
+            final_audio_label = "[final_mix]"
+            filter_parts.append(
+                f"{speech_audio}{bgm_ducked_label}amix=inputs=2:duration=first:dropout_transition=2:normalize=0{final_audio_label}"
+            )
+            audio_output = final_audio_label
+        else:
+            final_audio_label = "[final_mix]"
+            filter_parts.append(
+                f"{speech_audio}{bgm_base_label}amix=inputs=2:duration=first:dropout_transition=2:normalize=0{final_audio_label}"
+            )
+            audio_output = final_audio_label
 
     filter_complex = ";".join(filter_parts)
     return input_args, filter_complex, video_output, audio_output

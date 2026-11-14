@@ -30,6 +30,7 @@ import { useAppStore } from '../../stores/useAppStore';
 import { useServiceStatus } from '../../hooks/useServiceStatus';
 import type {
   LLMAdapterInfo,
+  LutInfo,
   MediaAsset,
   MusicSyncReport,
   Project,
@@ -138,7 +139,16 @@ type EditableClip = {
   source_out_seconds: number;
   timeline_position_seconds: number;
   playback_speed: number;
-  transition_in?: 'none' | 'cut' | 'fade' | 'crossfade';
+  transition_in?:
+    | 'none'
+    | 'cut'
+    | 'fade'
+    | 'crossfade'
+    | 'wipeleft'
+    | 'wiperight'
+    | 'slideup'
+    | 'slidedown'
+    | 'dissolve';
   transition_duration_seconds?: number;
   stabilize?: boolean;
   reframe_x?: number;
@@ -148,6 +158,9 @@ type EditableClip = {
     contrast: number;
     saturation: number;
     temperature: number;
+    lut_path?: string | null;
+    lut_name?: string | null;
+    lut_intensity?: number;
   };
   audio?: {
     gain_db: number;
@@ -172,10 +185,35 @@ type EditableTextOverlay = {
   start_seconds: number;
   end_seconds: number;
   position: 'top' | 'center' | 'bottom';
+  style_preset?:
+    | 'default'
+    | 'bold_yellow'
+    | 'minimal_white'
+    | 'cinematic_box'
+    | 'neon_cyan';
+  animation_preset?: 'none' | 'pop_in' | 'fade' | 'slide_up';
+  font_size?: number;
+  font_color?: string;
 };
 
 type EditableTimeline = {
   tracks: EditableTrack[];
+  background_music?: {
+    media_path?: string | null;
+    media_id?: string | null;
+    volume_db?: number;
+    fade_in_seconds?: number;
+    fade_out_seconds?: number;
+    ducking_enabled?: boolean;
+    ducking_attenuation_db?: number;
+    loop?: boolean;
+  } | null;
+  voiceover?: {
+    media_path?: string | null;
+    media_id?: string | null;
+    volume_db?: number;
+    start_time_seconds?: number;
+  } | null;
   [key: string]: unknown;
 };
 
@@ -221,6 +259,12 @@ export function EditorPage() {
   const [captionEnd, setCaptionEnd] = useState('2');
   const [captionPosition, setCaptionPosition] =
     useState<EditableTextOverlay['position']>('bottom');
+  const [captionStyle, setCaptionStyle] =
+    useState<NonNullable<EditableTextOverlay['style_preset']>>('bold_yellow');
+  const [captionAnimation, setCaptionAnimation] =
+    useState<NonNullable<EditableTextOverlay['animation_preset']>>('pop_in');
+  const [captionFontSize, setCaptionFontSize] = useState<number>(0);
+  const [luts, setLuts] = useState<LutInfo[]>([]);
   const [tempoBpm, setTempoBpm] = useState<number>(120);
   const [syncScoreReport, setSyncScoreReport] =
     useState<MusicSyncReport | null>(null);
@@ -246,6 +290,10 @@ export function EditorPage() {
     if (status.state === 'ready') {
       void window.reelforge.listProjects().then(setProjects);
       void window.reelforge.listLLMAdapters().then(setAdapters);
+      void window.reelforge
+        .listLuts()
+        .then(setLuts)
+        .catch(() => {});
       void window.reelforge
         .getStorageInfo()
         .then((s) => {
@@ -649,6 +697,10 @@ export function EditorPage() {
     (generated?.timeline.tracks as EditableTrack[] | undefined)
       ?.filter((track) => track.kind === 'text')
       .flatMap((track) => track.overlays ?? []) ?? [];
+  const timelineBgm = (generated?.timeline as EditableTimeline | undefined)
+    ?.background_music;
+  const timelineVo = (generated?.timeline as EditableTimeline | undefined)
+    ?.voiceover;
   const videoMedia = media.filter((asset) => asset.kind === 'video');
   const previewClip = clips[0];
   const previewAsset = previewClip
@@ -860,7 +912,7 @@ export function EditorPage() {
 
   function changeClipTransition(
     clipId: string,
-    transition: 'none' | 'cut' | 'fade' | 'crossfade',
+    transition: NonNullable<EditableClip['transition_in']>,
   ) {
     const timeline = structuredClone(generated?.timeline) as
       | EditableTimeline
@@ -871,7 +923,7 @@ export function EditorPage() {
     if (!timeline || !clip) return;
     clip.transition_in = transition;
     clip.transition_duration_seconds =
-      transition === 'fade' || transition === 'crossfade' ? 0.5 : 0;
+      transition !== 'none' && transition !== 'cut' ? 0.5 : 0;
     commitTimeline(timeline);
   }
 
@@ -1043,6 +1095,9 @@ export function EditorPage() {
       start_seconds: start,
       end_seconds: end,
       position: captionPosition,
+      style_preset: captionStyle,
+      animation_preset: captionAnimation,
+      ...(captionFontSize > 0 ? { font_size: captionFontSize } : {}),
     });
     setError(null);
     setCaptionText('');
@@ -1059,6 +1114,143 @@ export function EditorPage() {
     if (textTrack.overlays.length === 0) {
       timeline.tracks = timeline.tracks.filter((track) => track !== textTrack);
     }
+    commitTimeline(timeline);
+  }
+
+  async function handleImportCustomLut() {
+    try {
+      const filePath = await window.reelforge.importLutDialog();
+      if (!filePath) return;
+      const imported = await window.reelforge.importLut({
+        source_path: filePath,
+      });
+      const updated = await window.reelforge.listLuts();
+      setLuts(updated);
+      setFeedbackNotice(`Imported 3D LUT "${imported.name}" successfully.`);
+      return imported;
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to import .cube LUT file.',
+      );
+    }
+  }
+
+  function changeClipLut(
+    clipId: string,
+    lutPath: string | null,
+    lutName: string | null,
+  ) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    const clip = timeline?.tracks
+      .flatMap((t) => t.clips)
+      .find((c) => c.id === clipId);
+    if (!timeline || !clip) return;
+    clip.color ??= { exposure: 0, contrast: 0, saturation: 0, temperature: 0 };
+    clip.color.lut_path = lutPath;
+    clip.color.lut_name = lutName;
+    commitTimeline(timeline);
+  }
+
+  function applyLutToAllClips(lutPath: string | null, lutName: string | null) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline) return;
+    for (const track of timeline.tracks) {
+      for (const clip of track.clips) {
+        clip.color ??= {
+          exposure: 0,
+          contrast: 0,
+          saturation: 0,
+          temperature: 0,
+        };
+        clip.color.lut_path = lutPath;
+        clip.color.lut_name = lutName;
+      }
+    }
+    commitTimeline(timeline);
+    setFeedbackNotice(
+      lutName
+        ? `Applied 3D LUT "${lutName}" to all clips.`
+        : 'Cleared 3D LUT on all clips.',
+    );
+  }
+
+  async function handleSelectBgm() {
+    const filePath = await window.reelforge.selectAudioFileDialog();
+    if (!filePath) return;
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline) return;
+    timeline.background_music = {
+      media_path: filePath,
+      media_id: null,
+      volume_db: -10,
+      fade_in_seconds: 1.0,
+      fade_out_seconds: 1.5,
+      ducking_enabled: true,
+      ducking_attenuation_db: -12,
+      loop: true,
+    };
+    commitTimeline(timeline);
+    setFeedbackNotice('Background music track added with auto-ducking.');
+  }
+
+  function handleRemoveBgm() {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline) return;
+    timeline.background_music = null;
+    commitTimeline(timeline);
+    setFeedbackNotice('Removed background music track.');
+  }
+
+  function changeBgmField(field: string, value: unknown) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline || !timeline.background_music) return;
+    (timeline.background_music as Record<string, unknown>)[field] = value;
+    commitTimeline(timeline);
+  }
+
+  async function handleSelectVoiceover() {
+    const filePath = await window.reelforge.selectAudioFileDialog();
+    if (!filePath) return;
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline) return;
+    timeline.voiceover = {
+      media_path: filePath,
+      media_id: null,
+      volume_db: 0,
+      start_time_seconds: 0,
+    };
+    commitTimeline(timeline);
+    setFeedbackNotice('Voiceover audio track added.');
+  }
+
+  function handleRemoveVoiceover() {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline) return;
+    timeline.voiceover = null;
+    commitTimeline(timeline);
+    setFeedbackNotice('Removed voiceover audio track.');
+  }
+
+  function changeVoiceoverField(field: string, value: unknown) {
+    const timeline = structuredClone(generated?.timeline) as
+      | EditableTimeline
+      | undefined;
+    if (!timeline || !timeline.voiceover) return;
+    (timeline.voiceover as Record<string, unknown>)[field] = value;
     commitTimeline(timeline);
   }
 
@@ -1591,6 +1783,67 @@ export function EditorPage() {
                   <option value="bottom">Bottom</option>
                 </select>
               </label>
+              <label className="text-[11px] text-neutral-500">
+                Style Preset
+                <select
+                  value={captionStyle}
+                  onChange={(event) =>
+                    setCaptionStyle(
+                      event.target.value as NonNullable<
+                        EditableTextOverlay['style_preset']
+                      >,
+                    )
+                  }
+                  className="mt-1 block rounded border border-white/10 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-200"
+                >
+                  <option value="bold_yellow">
+                    Reel / TikTok Bold (Yellow)
+                  </option>
+                  <option value="minimal_white">
+                    Minimalist Modern (White)
+                  </option>
+                  <option value="cinematic_box">Cinematic Film (Box)</option>
+                  <option value="neon_cyan">Neon Glow (Cyan)</option>
+                  <option value="default">Classic Default</option>
+                </select>
+              </label>
+              <label className="text-[11px] text-neutral-500">
+                Animation
+                <select
+                  value={captionAnimation}
+                  onChange={(event) =>
+                    setCaptionAnimation(
+                      event.target.value as NonNullable<
+                        EditableTextOverlay['animation_preset']
+                      >,
+                    )
+                  }
+                  className="mt-1 block rounded border border-white/10 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-200"
+                >
+                  <option value="pop_in">Pop-in / Zoom</option>
+                  <option value="slide_up">Slide Up</option>
+                  <option value="fade">Smooth Fade</option>
+                  <option value="none">None (Static)</option>
+                </select>
+              </label>
+              <label className="text-[11px] text-neutral-500">
+                Font Size (px)
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  step="2"
+                  value={captionFontSize || ''}
+                  placeholder="Auto"
+                  onChange={(event) =>
+                    setCaptionFontSize(
+                      Math.max(0, Number(event.target.value) || 0),
+                    )
+                  }
+                  className="mt-1 block w-20 rounded border border-white/10 bg-neutral-900 px-2 py-1.5 text-xs text-neutral-200"
+                  title="Leave empty for auto font sizing based on frame dimensions"
+                />
+              </label>
               <button
                 type="button"
                 onClick={addCaption}
@@ -1624,11 +1877,34 @@ export function EditorPage() {
                 key={`${overlay.start_seconds}-${index}`}
                 className="mt-2 flex items-center justify-between gap-3 border-t border-white/5 pt-2 text-xs"
               >
-                <span className="min-w-0 truncate text-neutral-300">
-                  {overlay.start_seconds.toFixed(1)}–
-                  {overlay.end_seconds.toFixed(1)}s · {overlay.position} ·{' '}
-                  {overlay.text}
-                </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-neutral-300">
+                  <span className="font-mono text-neutral-400">
+                    {overlay.start_seconds.toFixed(1)}–
+                    {overlay.end_seconds.toFixed(1)}s
+                  </span>
+                  <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-neutral-400">
+                    {overlay.position}
+                  </span>
+                  {overlay.style_preset && (
+                    <span className="rounded bg-orange-500/20 px-1.5 py-0.5 text-[10px] text-orange-300">
+                      {overlay.style_preset}
+                    </span>
+                  )}
+                  {overlay.animation_preset &&
+                    overlay.animation_preset !== 'none' && (
+                      <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] text-sky-300">
+                        {overlay.animation_preset}
+                      </span>
+                    )}
+                  {Boolean(overlay.font_size) && (
+                    <span className="text-[10px] text-neutral-400">
+                      {overlay.font_size}px
+                    </span>
+                  )}
+                  <span className="truncate font-medium text-white">
+                    {overlay.text}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => removeCaption(index)}
@@ -1640,9 +1916,229 @@ export function EditorPage() {
               </div>
             ))}
             <p className="mt-2 text-[11px] text-neutral-600">
-              Captions are burned into the original footage during export. They
-              do not alter or generate scene content.
+              Captions are burned into the original footage during export with
+              chosen style and animated keyframes. They do not alter or generate
+              scene content.
             </p>
+          </div>
+
+          {/* Multi-Track Audio Mixing (BGM & Voiceover with Auto-Ducking) */}
+          <div className="mb-3 rounded-md border border-white/10 bg-white/[0.02] p-3">
+            <div className="flex items-center justify-between">
+              <h4 className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                <Music size={13} className="text-orange-400" />
+                Multi-Track Audio Mixing & Ducking
+              </h4>
+              <span className="text-[11px] text-neutral-500">
+                Voiceover + Background Music with smart sidechain compression
+              </span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {/* Background Music Card */}
+              <div className="rounded border border-white/5 bg-neutral-900/60 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-200">
+                    Background Music (BGM)
+                  </span>
+                  {timelineBgm?.media_path ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveBgm}
+                      className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300"
+                    >
+                      <Trash2 size={11} /> Remove
+                    </button>
+                  ) : null}
+                </div>
+
+                {!timelineBgm?.media_path ? (
+                  <div className="mt-2.5 flex flex-col items-start gap-2">
+                    <p className="text-[11px] text-neutral-400">
+                      Add a background soundtrack with automatic audio ducking
+                      during speech.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectBgm()}
+                      className="rounded border border-white/10 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-orange-500/50 hover:text-white"
+                    >
+                      + Choose Music Audio File (.mp3, .wav, .m4a)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-col gap-2.5 text-xs">
+                    <div className="flex items-center justify-between rounded bg-neutral-950 px-2 py-1 text-[11px] text-neutral-300">
+                      <span
+                        className="max-w-[220px] truncate"
+                        title={timelineBgm.media_path}
+                      >
+                        🎵 {timelineBgm.media_path.split(/[\\/]/).pop()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectBgm()}
+                        className="text-[10px] text-neutral-400 hover:text-white"
+                      >
+                        Change
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <label className="text-neutral-400">
+                        Volume: {timelineBgm.volume_db ?? -10} dB
+                        <input
+                          type="range"
+                          min="-30"
+                          max="6"
+                          step="1"
+                          value={timelineBgm.volume_db ?? -10}
+                          onChange={(e) =>
+                            changeBgmField('volume_db', Number(e.target.value))
+                          }
+                          className="mt-1 block w-full accent-orange-500"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 pt-3 text-neutral-300">
+                        <input
+                          type="checkbox"
+                          checked={timelineBgm.loop ?? true}
+                          onChange={(e) =>
+                            changeBgmField('loop', e.target.checked)
+                          }
+                          className="accent-orange-500"
+                        />
+                        Loop to video length
+                      </label>
+                    </div>
+
+                    {/* Auto-Ducking controls */}
+                    <div className="rounded border border-orange-500/20 bg-orange-950/15 p-2 text-[11px]">
+                      <label className="flex items-center gap-2 font-medium text-orange-200">
+                        <input
+                          type="checkbox"
+                          checked={timelineBgm.ducking_enabled ?? true}
+                          onChange={(e) =>
+                            changeBgmField('ducking_enabled', e.target.checked)
+                          }
+                          className="accent-orange-500"
+                        />
+                        Auto-Duck music during voice / speech
+                      </label>
+                      {timelineBgm.ducking_enabled !== false && (
+                        <label className="mt-2 block text-neutral-400">
+                          Attenuation:{' '}
+                          {timelineBgm.ducking_attenuation_db ?? -12} dB
+                          <input
+                            type="range"
+                            min="-24"
+                            max="-3"
+                            step="1"
+                            value={timelineBgm.ducking_attenuation_db ?? -12}
+                            onChange={(e) =>
+                              changeBgmField(
+                                'ducking_attenuation_db',
+                                Number(e.target.value),
+                              )
+                            }
+                            className="mt-1 block w-full accent-orange-500"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Voiceover Card */}
+              <div className="rounded border border-white/5 bg-neutral-900/60 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-200">
+                    Voiceover / Narration Track
+                  </span>
+                  {timelineVo?.media_path ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveVoiceover}
+                      className="flex items-center gap-1 text-[11px] text-red-400 hover:text-red-300"
+                    >
+                      <Trash2 size={11} /> Remove
+                    </button>
+                  ) : null}
+                </div>
+
+                {!timelineVo?.media_path ? (
+                  <div className="mt-2.5 flex flex-col items-start gap-2">
+                    <p className="text-[11px] text-neutral-400">
+                      Add a separate voiceover or commentary track overlaid on
+                      top of clips.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleSelectVoiceover()}
+                      className="rounded border border-white/10 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-200 hover:border-orange-500/50 hover:text-white"
+                    >
+                      + Choose Voiceover File (.mp3, .wav, .m4a)
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-col gap-2.5 text-xs">
+                    <div className="flex items-center justify-between rounded bg-neutral-950 px-2 py-1 text-[11px] text-neutral-300">
+                      <span
+                        className="max-w-[220px] truncate"
+                        title={timelineVo.media_path}
+                      >
+                        🎙️ {timelineVo.media_path.split(/[\\/]/).pop()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectVoiceover()}
+                        className="text-[10px] text-neutral-400 hover:text-white"
+                      >
+                        Change
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <label className="text-neutral-400">
+                        Volume: {timelineVo.volume_db ?? 0} dB
+                        <input
+                          type="range"
+                          min="-20"
+                          max="12"
+                          step="1"
+                          value={timelineVo.volume_db ?? 0}
+                          onChange={(e) =>
+                            changeVoiceoverField(
+                              'volume_db',
+                              Number(e.target.value),
+                            )
+                          }
+                          className="mt-1 block w-full accent-orange-500"
+                        />
+                      </label>
+                      <label className="text-neutral-400">
+                        Start delay:{' '}
+                        {(timelineVo.start_time_seconds ?? 0).toFixed(1)}s
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={timelineVo.start_time_seconds ?? 0}
+                          onChange={(e) =>
+                            changeVoiceoverField(
+                              'start_time_seconds',
+                              Math.max(0, Number(e.target.value) || 0),
+                            )
+                          }
+                          className="mt-1 block w-full rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-3 border-b border-white/5 pb-2">
             <span className="text-xs text-neutral-400">
@@ -1831,43 +2327,57 @@ export function EditorPage() {
                       onChange={(event) =>
                         changeClipTransition(
                           clip.id,
-                          event.target.value as
-                            | 'none'
-                            | 'cut'
-                            | 'fade'
-                            | 'crossfade',
+                          event.target.value as NonNullable<
+                            EditableClip['transition_in']
+                          >,
                         )
                       }
                       className="ml-1 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
                     >
                       <option value="cut">Cut</option>
-                      <option value="fade">Fade from black</option>
+                      <option value="fade">Fade</option>
                       <option value="crossfade" disabled={i === 0}>
                         Crossfade
                       </option>
+                      <option value="wipeleft" disabled={i === 0}>
+                        Wipe Left
+                      </option>
+                      <option value="wiperight" disabled={i === 0}>
+                        Wipe Right
+                      </option>
+                      <option value="slideup" disabled={i === 0}>
+                        Slide Up
+                      </option>
+                      <option value="slidedown" disabled={i === 0}>
+                        Slide Down
+                      </option>
+                      <option value="dissolve" disabled={i === 0}>
+                        Dissolve
+                      </option>
+                      <option value="none">None</option>
                     </select>
                   </label>
-                  {(clip.transition_in === 'fade' ||
-                    clip.transition_in === 'crossfade') && (
-                    <label className="text-[11px] text-neutral-500">
-                      Transition length
-                      <input
-                        type="number"
-                        min="0.1"
-                        max="2"
-                        step="0.1"
-                        value={clip.transition_duration_seconds ?? 0.5}
-                        onChange={(event) =>
-                          changeClipTransitionDuration(
-                            clip.id,
-                            Number(event.target.value),
-                          )
-                        }
-                        className="ml-1 w-16 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
-                      />
-                      sec
-                    </label>
-                  )}
+                  {clip.transition_in !== 'none' &&
+                    clip.transition_in !== 'cut' && (
+                      <label className="text-[11px] text-neutral-500">
+                        Transition length
+                        <input
+                          type="number"
+                          min="0.1"
+                          max="2"
+                          step="0.1"
+                          value={clip.transition_duration_seconds ?? 0.5}
+                          onChange={(event) =>
+                            changeClipTransitionDuration(
+                              clip.id,
+                              Number(event.target.value),
+                            )
+                          }
+                          className="ml-1 w-16 rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                        />
+                        sec
+                      </label>
+                    )}
                   <label
                     title="Conventional FFmpeg motion correction. Blank edges may be visible; no generated fill is used."
                     className="flex items-center gap-1.5 text-[11px] text-neutral-400"
@@ -1925,6 +2435,54 @@ export function EditorPage() {
                       {preset.name}
                     </button>
                   ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 border-t border-white/5 pt-2 text-[11px]">
+                  <span className="flex items-center gap-1 font-medium text-neutral-400">
+                    <Palette size={12} className="text-orange-400" /> 3D LUT
+                    (.cube):
+                  </span>
+                  <select
+                    value={clip.color?.lut_path ?? ''}
+                    onChange={(event) => {
+                      const selectedPath = event.target.value || null;
+                      const matched = luts.find((l) => l.path === selectedPath);
+                      changeClipLut(
+                        clip.id,
+                        selectedPath,
+                        matched ? matched.name : null,
+                      );
+                    }}
+                    className="rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-xs text-neutral-200"
+                  >
+                    <option value="">None (Standard EQ)</option>
+                    {luts.map((l) => (
+                      <option key={l.id} value={l.path}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void handleImportCustomLut()}
+                    className="rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-[11px] text-orange-300 hover:bg-white/5 hover:text-orange-200"
+                  >
+                    + Import .cube
+                  </button>
+                  {clip.color?.lut_path && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        applyLutToAllClips(
+                          clip.color!.lut_path!,
+                          clip.color?.lut_name ?? null,
+                        )
+                      }
+                      className="rounded border border-white/10 bg-neutral-900 px-2 py-0.5 text-[11px] text-neutral-400 hover:text-white"
+                      title="Apply this LUT to all clips"
+                    >
+                      Apply LUT to all
+                    </button>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-white/5 pt-2 sm:grid-cols-3">
                   {(

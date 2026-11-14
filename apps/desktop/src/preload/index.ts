@@ -13,6 +13,7 @@ import type {
   InstallReleaseResult,
   LLMAdapterInfo,
   LocalReleaseBuild,
+  LutInfo,
   MediaAsset,
   MediaBatchImportResult,
   MediaPage,
@@ -428,6 +429,18 @@ const reelforgeApi = {
     filePath: string;
   }): Promise<InstallReleaseResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.installLocalRelease, payload);
+  },
+  listLuts(): Promise<LutInfo[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.lutList);
+  },
+  importLutDialog(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.lutImportDialog);
+  },
+  importLut(payload: { source_path: string }): Promise<LutInfo> {
+    return ipcRenderer.invoke(IPC_CHANNELS.lutImport, payload);
+  },
+  selectAudioFileDialog(): Promise<string | null> {
+    return ipcRenderer.invoke(IPC_CHANNELS.audioFileDialog);
   },
 };
 

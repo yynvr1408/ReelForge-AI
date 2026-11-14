@@ -90,6 +90,10 @@ export const IPC_CHANNELS = {
   installRelease: 'reelforge:install-release',
   listLocalReleases: 'reelforge:list-local-releases',
   installLocalRelease: 'reelforge:install-local-release',
+  lutList: 'reelforge:lut-list',
+  lutImportDialog: 'reelforge:lut-import-dialog',
+  lutImport: 'reelforge:lut-import',
+  audioFileDialog: 'reelforge:audio-file-dialog',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -462,4 +466,31 @@ export interface LocalReleaseBuild {
   sizeBytes: number;
   modifiedAt: string;
   isCurrent: boolean;
+}
+
+export interface LutInfo {
+  id: string;
+  name: string;
+  filename: string;
+  path: string;
+  size_bytes: number;
+  is_builtin: boolean;
+}
+
+export interface BackgroundMusicSettings {
+  media_path: string | null;
+  media_id: string | null;
+  volume_db: number;
+  fade_in_seconds: number;
+  fade_out_seconds: number;
+  ducking_enabled: boolean;
+  ducking_attenuation_db: number;
+  loop: boolean;
+}
+
+export interface VoiceoverSettings {
+  media_path: string | null;
+  media_id: string | null;
+  volume_db: number;
+  start_time_seconds: number;
 }

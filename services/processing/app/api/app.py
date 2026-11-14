@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import feedback, health, media, model_manager, projects, reference, render, storage, style_profiles, timeline, training
+from app.api.routes import feedback, health, luts, media, model_manager, projects, reference, render, storage, style_profiles, timeline, training
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.database.models import ReferenceAnalysisJob, ReferenceVideo, TrainingJob
@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(model_manager.router)
     app.include_router(feedback.router)
     app.include_router(storage.router)
+    app.include_router(luts.router)
 
     logger.info("Processing service initialized", extra={"extra_fields": {"data_dir": str(settings.data_dir)}})
     return app

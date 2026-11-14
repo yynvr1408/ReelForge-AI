@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-11-14
+
+### Custom 3D LUT Import, Animated Captions, Multi-Track Audio Ducking & Transitions
+
+This release introduces creative color grading via custom 3D LUT import (`.cube`), professional animated caption styles and kinetic presets, intelligent multi-track audio mixing with speech auto-ducking, expanded transition options, and a completely streamlined consumer-focused Updates experience.
+
+#### Added & Enhanced
+* **Custom 3D LUT Color Grading (`.cube`)**:
+  * Added complete parser, validator, and importer for industry-standard `.cube` 3D Look-Up Tables.
+  * Seeded 4 built-in cinematic LUT presets (`Teal_and_Orange.cube`, `Warm_Golden.cube`, `Moody_Film_Noir.cube`, `Clean_Vivid.cube`) automatically into local storage.
+  * Direct file picker dialog for importing custom LUT files with instant timeline integration.
+  * 1-click **"Apply LUT to all"** clips in the active timeline.
+  * Hardware-accelerated rendering using FFmpeg `lut3d` filter.
+* **Advanced Caption Styles & Animated Presets**:
+  * 5 styled caption presets: `Reel / TikTok Bold (Yellow)`, `Minimalist Modern (White)`, `Cinematic Film (Box)`, `Neon Glow (Cyan)`, and `Classic Default`.
+  * 4 dynamic animation presets: `Pop-in / Zoom`, `Slide Up`, `Smooth Fade`, and `None (Static)` driven by FFmpeg `drawtext` kinetic expressions (alpha ramp curves and trigonometric position offsets).
+  * Configurable font sizing with automatic scaling relative to target export frame height.
+  * Styled preset badges in the timeline caption manager.
+* **Multi-Track Audio Mixing & Auto-Ducking**:
+  * Dedicated Background Music (BGM) track with audio file picker (`.mp3`, `.wav`, `.m4a`), volume control slider (-30 dB to +6 dB), and loop-to-video-duration toggle.
+  * Smart speech auto-ducking: automatically compresses and ducks BGM level during spoken intervals or voiceover using FFmpeg `sidechaincompress` filter with configurable attenuation (-24 dB to -3 dB).
+  * Dedicated Voiceover / Narration track with volume slider (-20 dB to +12 dB) and customizable start delay offset.
+* **Expanded Clip Transitions**:
+  * Added Wipe Left, Wipe Right, Slide Up, Slide Down, and Dissolve transitions alongside Cut, Fade, and Crossfade with adjustable duration (0.1s to 2.0s), powered by FFmpeg `xfade`.
+* **Streamlined Consumer Updates & Rollback Interface**:
+  * Rebuilt the Updates interface to match clean consumer design standards: completely eliminated technical git repository links, commit hashes, and internal deployment architecture panels.
+  * Displays current version with status badge, 1-click update check, and a clean "Version History & Rollback" table.
+  * Dedicated crimson **`[Roll Back to This]`** buttons for instant 1-click rollback to previous releases.
+
+---
+
 ## [1.0.0] - 2026-11-13
 
 ### Initial Production Release Baseline

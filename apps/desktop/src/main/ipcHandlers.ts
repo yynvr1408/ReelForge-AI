@@ -760,6 +760,44 @@ export function registerIpcHandlers(
     return requireClient().post('/training/dataset/from-reels');
   });
 
+  ipcMain.handle(IPC_CHANNELS.lutList, async () => {
+    return requireClient().get('/luts');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.lutImportDialog, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import 3D LUT (.cube) File',
+      properties: ['openFile'],
+      filters: [{ name: '3D LUT Files', extensions: ['cube'] }],
+    });
+    return result.canceled || result.filePaths.length === 0
+      ? null
+      : result.filePaths[0];
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.lutImport,
+    async (_event, payload: { source_path: string }) => {
+      return requireClient().post('/luts/import', payload);
+    },
+  );
+
+  ipcMain.handle(IPC_CHANNELS.audioFileDialog, async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Audio / Music Track',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Audio Files',
+          extensions: ['mp3', 'wav', 'aac', 'm4a', 'flac', 'ogg'],
+        },
+      ],
+    });
+    return result.canceled || result.filePaths.length === 0
+      ? null
+      : result.filePaths[0];
+  });
+
   const RELEASES_OWNER = 'yynvr1408';
   const RELEASES_REPO = 'reelforge-ai-releases';
 

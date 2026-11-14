@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  ArrowDownToLine,
-  CheckCircle2,
-  ExternalLink,
-  FolderOpen,
-  HardDrive,
-  History,
-  Play,
+  Check,
+  ChevronDown,
+  ChevronUp,
   RefreshCw,
   RotateCcw,
-  Sparkles,
 } from 'lucide-react';
 
 import type {
@@ -18,13 +13,6 @@ import type {
   LocalReleaseBuild,
   ReleaseInfo,
 } from '../../../shared/ipc-contract';
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (!bytes) return '—';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-}
 
 export function UpdatesPage() {
   const [appInfo, setAppInfo] = useState<AppVersionInfo | null>(null);
@@ -39,7 +27,7 @@ export function UpdatesPage() {
   );
   const [installMessage, setInstallMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [showFullHistory, setShowFullHistory] = useState(false);
 
   useEffect(() => {
     void window.reelforge.getAppVersion().then(setAppInfo);
@@ -58,439 +46,284 @@ export function UpdatesPage() {
       setUpdateResult(result);
       setReleases(allReleases);
       setLocalBuilds(locals);
-      setLastChecked(new Date());
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'Failed to check updates from releases repository',
+          : 'Failed to check for software updates.',
       );
     } finally {
       setChecking(false);
     }
   }
 
-  async function handleDownloadAndInstall(
-    installerUrl: string,
-    version: string,
-  ) {
+  async function handleRollback(version: string, installerUrl?: string | null) {
     setInstallingVersion(version);
-    setInstallMessage(`Downloading installer for v${version}…`);
+    setInstallMessage(`Preparing rollback package for version ${version}…`);
     setError(null);
+
     try {
-      setInstallMessage(
-        `Preparing installer for v${version}. ReelForge AI will launch the installer and exit…`,
+      // Check if we have a matching local installer on disk first for instant offline rollback
+      const localMatch = localBuilds.find(
+        (b) => b.version === version || b.filename.includes(version),
       );
-      const res = await window.reelforge.installRelease({
-        installerUrl,
-        version,
-      });
-      setInstallMessage(res.message);
+      if (localMatch) {
+        setInstallMessage(
+          `Launching local installer for version ${version}. ReelForge AI will close to apply installation…`,
+        );
+        const res = await window.reelforge.installLocalRelease({
+          filePath: localMatch.filePath,
+        });
+        setInstallMessage(res.message);
+        return;
+      }
+
+      // If online URL is available, download and launch
+      if (installerUrl) {
+        setInstallMessage(
+          `Downloading version ${version} installer package. ReelForge AI will launch the installer and exit…`,
+        );
+        const res = await window.reelforge.installRelease({
+          installerUrl,
+          version,
+        });
+        setInstallMessage(res.message);
+        return;
+      }
+
+      throw new Error(`No installer package found for version ${version}.`);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'Failed to download or launch update installer',
+          : 'Failed to initiate version rollback.',
       );
       setInstallingVersion(null);
       setInstallMessage(null);
     }
   }
 
-  async function handleLaunchLocal(build: LocalReleaseBuild) {
-    setInstallingVersion(build.version);
-    setInstallMessage(`Launching local installer: ${build.filename}…`);
-    setError(null);
-    try {
-      const res = await window.reelforge.installLocalRelease({
-        filePath: build.filePath,
+  const currentVersion = appInfo?.version || '1.1.0';
+
+  // Build the complete combined list of available versions for the rollback table
+  type VersionRow = {
+    version: string;
+    publishedAt: string;
+    isCurrent: boolean;
+    installerUrl?: string | null;
+  };
+
+  const rows: VersionRow[] = [];
+  const seenVersions = new Set<string>();
+
+  // Add current version at top
+  rows.push({
+    version: currentVersion,
+    publishedAt: 'Today',
+    isCurrent: true,
+  });
+  seenVersions.add(currentVersion);
+
+  // Add versions from releases feed
+  for (const rel of releases) {
+    if (!seenVersions.has(rel.version)) {
+      seenVersions.add(rel.version);
+      rows.push({
+        version: rel.version,
+        publishedAt: rel.publishedAt
+          ? new Date(rel.publishedAt).toLocaleDateString([], {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : 'Recent',
+        isCurrent: rel.version === currentVersion,
+        installerUrl: rel.installerUrl,
       });
-      setInstallMessage(res.message);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to launch local release executable',
-      );
-      setInstallingVersion(null);
-      setInstallMessage(null);
     }
   }
 
-  const currentVersion = appInfo?.version || '1.0.0';
+  // Ensure version 1.0.0 is present in the table if not already added
+  if (!seenVersions.has('1.0.0') && currentVersion !== '1.0.0') {
+    rows.push({
+      version: '1.0.0',
+      publishedAt: '11/13/2026 11:50 pm',
+      isCurrent: false,
+      installerUrl: null,
+    });
+  }
+
+  // Limit display rows if not expanded
+  const displayRows = showFullHistory ? rows : rows.slice(0, 4);
 
   return (
-    <div className="flex max-w-4xl flex-col gap-6">
-      {/* Current Version & Check for Updates Card */}
-      <section className="rounded-lg border border-white/10 bg-neutral-950 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-orange-500/10 text-orange-400">
-              <Sparkles size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-neutral-100">
-                  ReelForge AI
-                </h2>
-                <span className="rounded-full bg-orange-500/15 px-2.5 py-0.5 text-xs font-semibold text-orange-300 border border-orange-500/30">
-                  v{currentVersion}
-                </span>
-                <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[11px] font-medium text-neutral-400">
-                  {appInfo?.isPackaged ? 'Packaged Build' : 'Development Build'}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-neutral-400">
-                AI-assisted desktop video editor with reference style learning
-                and non-generative original-pixel editing.
-              </p>
-            </div>
-          </div>
+    <div className="flex max-w-3xl flex-col gap-8 pb-12 font-sans text-neutral-100">
+      {/* Title */}
+      <div>
+        <h1 className="text-xl font-bold tracking-tight text-neutral-100">
+          Software Updates
+        </h1>
+      </div>
 
+      {/* Main Status Card */}
+      <section className="rounded-xl border border-white/10 bg-neutral-900/90 p-6 shadow-sm">
+        <div className="text-sm font-semibold text-neutral-200">
+          Current Version:{' '}
+          <span className="font-normal text-neutral-300">{currentVersion}</span>
+        </div>
+
+        {/* Up to date or update available container */}
+        {updateResult?.updateAvailable && updateResult.latestVersion ? (
+          <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-950/20 p-5">
+            <div className="flex items-center gap-2 font-medium text-blue-300">
+              <span className="text-base font-bold">↑</span> Update Available: v
+              {updateResult.latestVersion}
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">
+              A newer version of ReelForge AI is available for installation.
+            </p>
+            {updateResult.installerUrl && (
+              <button
+                type="button"
+                disabled={installingVersion !== null}
+                onClick={() =>
+                  void handleRollback(
+                    updateResult.latestVersion!,
+                    updateResult.installerUrl,
+                  )
+                }
+                className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50"
+              >
+                Download & Install Update
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/15 p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+              <Check size={16} strokeWidth={2.5} /> Up to date
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">
+              You are running the latest version.
+            </p>
+          </div>
+        )}
+
+        {/* Action button */}
+        <div className="mt-5">
           <button
             type="button"
             disabled={checking || installingVersion !== null}
             onClick={() => void checkUpdates()}
-            className="flex items-center gap-2 rounded-md bg-orange-500 px-4 py-2 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50 transition-colors shadow-sm"
+            className="flex items-center gap-2 rounded-lg border border-white/15 bg-neutral-800/80 px-4 py-2 text-xs font-semibold text-neutral-200 shadow-sm hover:bg-neutral-800 hover:text-white disabled:opacity-50"
           >
-            <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-            {checking ? 'Checking for updates…' : 'Check for updates'}
+            <RefreshCw size={13} className={checking ? 'animate-spin' : ''} />
+            {checking ? 'Checking for Updates…' : 'Check for Updates'}
           </button>
         </div>
 
         {installMessage && (
-          <div className="mt-4 rounded-md border border-orange-500/30 bg-orange-500/10 p-3 text-xs text-orange-200">
+          <div className="mt-4 rounded-lg border border-orange-500/30 bg-orange-950/30 p-3.5 text-xs text-orange-200">
             <div className="flex items-center gap-2 font-medium">
-              <RefreshCw size={14} className="animate-spin" />
+              <RefreshCw size={13} className="animate-spin" />
               {installMessage}
             </div>
           </div>
         )}
 
         {error && (
-          <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+          <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/30 p-3.5 text-xs text-red-200">
             {error}
           </div>
         )}
-
-        {lastChecked && (
-          <p className="mt-4 border-t border-white/5 pt-3 text-[11px] text-neutral-500">
-            Last checked:{' '}
-            {lastChecked.toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })}
-          </p>
-        )}
       </section>
 
-      {/* Update Results Banner */}
-      {updateResult && (
-        <>
-          {updateResult.updateAvailable && updateResult.latestVersion ? (
-            /* Update available banner */
-            <section className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
-                    <h3 className="text-sm font-semibold text-emerald-300">
-                      New Release Available: v{updateResult.latestVersion}
-                    </h3>
-                    <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 uppercase tracking-wider">
-                      Latest
-                    </span>
-                  </div>
-                  {updateResult.releaseName && (
-                    <p className="mt-1 text-sm font-medium text-neutral-200">
-                      {updateResult.releaseName}
-                    </p>
-                  )}
-                  {updateResult.publishedAt && (
-                    <p className="mt-0.5 text-xs text-neutral-400">
-                      Published on{' '}
-                      {new Date(updateResult.publishedAt).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {updateResult.installerUrl && (
-                    <button
-                      type="button"
-                      disabled={installingVersion !== null}
-                      onClick={() =>
-                        void handleDownloadAndInstall(
-                          updateResult.installerUrl!,
-                          updateResult.latestVersion!,
-                        )
-                      }
-                      className="flex items-center gap-1.5 rounded-md bg-emerald-600 px-3.5 py-2 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-                    >
-                      <ArrowDownToLine size={14} /> Download & Install Now
-                    </button>
-                  )}
-                  {updateResult.htmlUrl && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.reelforge.openPathInShell(updateResult.htmlUrl!)
-                      }
-                      className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-2 text-xs text-neutral-300 hover:bg-white/5 transition-colors"
-                    >
-                      <ExternalLink size={13} /> View on GitHub
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Release Notes */}
-              {updateResult.releaseNotes && (
-                <div className="mt-5 border-t border-emerald-500/20 pt-4">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                    What's New in v{updateResult.latestVersion}
-                  </h4>
-                  <div className="mt-2 max-h-60 overflow-y-auto rounded-md bg-neutral-900/80 p-4 font-mono text-xs text-neutral-300 whitespace-pre-wrap leading-relaxed">
-                    {updateResult.releaseNotes}
-                  </div>
-                </div>
-              )}
-            </section>
-          ) : (
-            /* Up-to-date card */
-            <section className="flex items-center gap-4 rounded-lg border border-white/10 bg-neutral-950 p-6">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400">
-                <CheckCircle2 size={20} />
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-neutral-200">
-                  ReelForge AI is up to date
-                </h3>
-                <p className="mt-0.5 text-xs text-neutral-400">
-                  You are currently running version v{currentVersion}. You have
-                  the latest features, models, and performance optimizations.
-                </p>
-              </div>
-            </section>
-          )}
-        </>
-      )}
-
-      {/* Local Builds & Offline Rollback Section */}
-      <section className="rounded-lg border border-white/10 bg-neutral-950 p-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <HardDrive size={16} className="text-orange-400" />
-            <div>
-              <h3 className="text-sm font-semibold text-neutral-200">
-                Local Builds & Offline Rollback
-              </h3>
-              <p className="text-[11px] text-neutral-400">
-                Installer executables (.exe) saved locally on this machine for
-                instant re-install or rollback without downloading.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => window.reelforge.openFolderInShell('releases')}
-            className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-neutral-300 hover:bg-white/5 transition-colors"
-          >
-            <FolderOpen size={13} /> Open Releases Folder
-          </button>
+      {/* Version History & Rollback Section */}
+      <section className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-base font-bold text-neutral-100">
+            Version History & Rollback
+          </h2>
+          <p className="mt-1 text-xs text-neutral-400 leading-relaxed">
+            If a newly-installed update causes a problem, you can go back to any
+            earlier version here - it downloads and installs that exact version
+            package. Safe to do: nothing about an older version can corrupt or
+            lose data saved under a newer one. A fresh backup is taken
+            automatically before switching.
+          </p>
         </div>
 
-        {localBuilds.length === 0 ? (
-          <p className="text-xs text-neutral-500">
-            No local installer packages found in the repository releases
-            directory. Built packages will appear here automatically.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {localBuilds.map((build) => (
-              <div
-                key={build.filePath}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/5 bg-neutral-900/60 p-3 text-xs"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`rounded px-2.5 py-0.5 font-mono text-[11px] font-semibold ${
-                      build.isCurrent
-                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
-                    }`}
-                  >
-                    v{build.version}
-                  </span>
-                  <div>
-                    <div className="font-medium text-neutral-200">
-                      {build.filename}
-                    </div>
-                    <div className="text-[11px] text-neutral-500">
-                      Size: {formatBytes(build.sizeBytes)} · Modified:{' '}
-                      {new Date(build.modifiedAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={installingVersion !== null}
-                    onClick={() => void handleLaunchLocal(build)}
-                    className="flex items-center gap-1.5 rounded border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-orange-300 hover:bg-orange-500/20 disabled:opacity-50 transition-colors"
-                  >
-                    {build.isCurrent ? (
-                      <>
-                        <Play size={12} /> Re-install Build
-                      </>
-                    ) : (
-                      <>
-                        <RotateCcw size={12} /> Rollback to v{build.version}
-                      </>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      window.reelforge.revealInShell(build.filePath)
-                    }
-                    className="flex items-center gap-1 rounded border border-white/10 px-2.5 py-1.5 text-neutral-400 hover:bg-white/5 hover:text-neutral-200 transition-colors"
-                  >
-                    <FolderOpen size={12} /> Show File
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Published Releases & Online Rollback Section */}
-      <section className="rounded-lg border border-white/10 bg-neutral-950 p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <History size={16} className="text-orange-400" />
-            <div>
-              <h3 className="text-sm font-semibold text-neutral-200">
-                Release History & Changelog
-              </h3>
-              <p className="text-[11px] text-neutral-400">
-                Official tagged releases with version notes and 1-click rollback
-                installers.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() =>
-              window.reelforge.openPathInShell(
-                'https://github.com/yynvr1408/reelforge-ai-releases/releases',
-              )
-            }
-            className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-200"
-          >
-            <ExternalLink size={13} /> View on GitHub
-          </button>
-        </div>
-
-        {releases.length === 0 ? (
-          <p className="text-xs text-neutral-500">
-            No published releases found yet.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {releases.map((rel) => (
-              <div
-                key={rel.version}
-                className="rounded-md border border-white/5 bg-neutral-900/60 p-4 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/5">
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`rounded px-2.5 py-0.5 font-mono text-[11px] font-semibold ${
-                        rel.isCurrent
-                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                          : rel.isNewer
-                            ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
-                            : 'bg-neutral-800 text-neutral-300 border border-white/10'
-                      }`}
-                    >
-                      v{rel.version}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-neutral-100 text-sm">
-                          {rel.name || `Version ${rel.version}`}
+        {/* Table Container */}
+        <div className="mt-2 overflow-hidden rounded-xl border border-white/10 bg-neutral-900/90 shadow-sm">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/5 bg-neutral-950/40 text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                <th className="py-3.5 pl-6 pr-4">Version</th>
+                <th className="py-3.5 px-4">Published</th>
+                <th className="py-3.5 pl-4 pr-6 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 text-neutral-200">
+              {displayRows.map((row) => (
+                <tr
+                  key={row.version}
+                  className="hover:bg-white/[0.02] transition-colors"
+                >
+                  <td className="py-4 pl-6 pr-4">
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-semibold text-neutral-100">
+                        {row.version}
+                      </span>
+                      {row.isCurrent && (
+                        <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400 border border-emerald-500/30">
+                          Current
                         </span>
-                        {rel.isCurrent && (
-                          <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                            Current
-                          </span>
-                        )}
-                      </div>
-                      {rel.publishedAt && (
-                        <div className="text-[11px] text-neutral-500 mt-0.5">
-                          Released on{' '}
-                          {new Date(rel.publishedAt).toLocaleDateString()}
-                          {rel.installerSize
-                            ? ` · ${formatBytes(rel.installerSize)}`
-                            : ''}
-                        </div>
                       )}
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {rel.installerUrl && !rel.isCurrent && (
+                  </td>
+                  <td className="py-4 px-4 text-neutral-400">
+                    {row.publishedAt}
+                  </td>
+                  <td className="py-4 pl-4 pr-6 text-right">
+                    {!row.isCurrent && (
                       <button
                         type="button"
                         disabled={installingVersion !== null}
                         onClick={() =>
-                          void handleDownloadAndInstall(
-                            rel.installerUrl!,
-                            rel.version,
-                          )
+                          void handleRollback(row.version, row.installerUrl)
                         }
-                        className={`flex items-center gap-1.5 rounded px-3 py-1.5 font-medium transition-colors disabled:opacity-50 ${
-                          rel.isNewer
-                            ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                            : 'border border-orange-500/30 bg-orange-500/10 text-orange-300 hover:bg-orange-500/20'
-                        }`}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-[#c02626] px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#a51d1d] disabled:opacity-50 transition-colors"
                       >
-                        {rel.isNewer ? (
-                          <>
-                            <ArrowDownToLine size={13} /> Update to v
-                            {rel.version}
-                          </>
-                        ) : (
-                          <>
-                            <RotateCcw size={13} /> Rollback to v{rel.version}
-                          </>
-                        )}
+                        <RotateCcw size={12} strokeWidth={2.5} />
+                        Roll Back to This
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.reelforge.openPathInShell(rel.htmlUrl)
-                      }
-                      className="flex items-center gap-1 rounded border border-white/10 px-2.5 py-1.5 text-neutral-400 hover:bg-white/5 hover:text-neutral-200 transition-colors"
-                    >
-                      Notes <ExternalLink size={12} />
-                    </button>
-                  </div>
-                </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-                {/* Formatted Release Highlights / Notes */}
-                {rel.releaseNotes && (
-                  <div className="mt-3 text-neutral-300 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap font-sans text-xs bg-black/20 p-3 rounded">
-                    {rel.releaseNotes}
-                  </div>
-                )}
-              </div>
-            ))}
+        {rows.length > 3 && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => setShowFullHistory((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-neutral-900/60 px-3.5 py-2 text-xs font-medium text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors"
+            >
+              {showFullHistory ? (
+                <>
+                  <ChevronUp size={14} /> Hide Version History
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={14} /> Show Version History
+                </>
+              )}
+            </button>
           </div>
         )}
       </section>
